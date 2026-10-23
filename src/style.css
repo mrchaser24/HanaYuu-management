@@ -94,6 +94,7 @@ hr.soft-divider { border: 0; border-top: 1px solid var(--line); margin: 20px 0; 
 .callout.danger { background: #fdf0ed; border-color: #f0c8bf; color: #8b3b2e; }
 .callout.info { background: #edf5f0; border-color: #d3e6da; color: #285f49; }
 .callout strong { display: inline; }
+.pos-info {margin-top: .7rem;}
 
 .metric-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
 .metric-card,.panel { border:1px solid var(--line); background:var(--paper); border-radius:16px; box-shadow:0 4px 15px rgba(26,60,45,.035); }

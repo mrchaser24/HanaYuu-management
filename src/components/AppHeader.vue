@@ -8,32 +8,26 @@ const auth = useAuthStore()
 const ui = useUiStore()
 const route = useRoute()
 
-const nav = computed(() => {
-  const items = [
-    { name: 'dashboard', label: 'Overview' },
-    { name: 'pos', label: 'Cashier' },
-    { name: 'sales', label: 'Sales' },
-    { name: 'inventory', label: 'Inventory' },
-    { name: 'purchases', label: 'Purchases' },
-  ]
-  if (auth.canViewReports) items.push({ name: 'reports', label: 'Reports' })
-  return items
-})
+const nav = computed(() => [
+  { name: 'home', label: 'Home' },
+  { name: 'pos', label: 'Sell' },
+  { name: 'record', label: 'Record' },
+  { name: 'history', label: 'History' },
+  { name: 'settings', label: 'Settings' },
+])
 
 function changeShop(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  auth.setShop(value)
+  auth.setShop((event.target as HTMLSelectElement).value)
 }
 
 function changeBranch(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  auth.setBranch(value)
+  auth.setBranch((event.target as HTMLSelectElement).value)
 }
 </script>
 
 <template>
   <header class="app-header">
-    <RouterLink class="brand" :to="{ name: 'dashboard' }" aria-label="Benta overview">
+    <RouterLink class="brand" :to="{ name: 'home' }" aria-label="Benta home">
       <div class="brand-mark">B</div>
       <div>
         <strong>Benta</strong>
@@ -46,7 +40,7 @@ function changeBranch(event: Event) {
         v-for="item in nav"
         :key="item.name"
         :to="{ name: item.name }"
-        :class="{ active: route.name === item.name || (item.name === 'sales' && route.name === 'order') }"
+        :class="{ active: route.name === item.name || (item.name === 'history' && route.name === 'order') }"
       >
         {{ item.label }}
       </RouterLink>
@@ -68,11 +62,10 @@ function changeBranch(event: Event) {
         </select>
       </label>
       <span v-else-if="auth.activeBranch" class="branch-chip">{{ auth.activeBranch.name }}</span>
-      <span v-else-if="auth.activeShop" class="branch-chip muted">No branches</span>
       <span class="status" :class="ui.online ? 'online' : 'offline'">
         <i></i>{{ ui.online ? 'Online' : 'Offline' }}
       </span>
-      <RouterLink class="user-chip" :to="{ name: 'more' }" :title="auth.displayName">
+      <RouterLink class="user-chip" :to="{ name: 'settings' }" :title="auth.displayName">
         <span>{{ auth.displayName.slice(0, 1).toUpperCase() }}</span>
         <em>{{ auth.role?.replace('_', ' ') ?? 'no role' }}</em>
       </RouterLink>

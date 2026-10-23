@@ -13,11 +13,12 @@ export const useCartStore = defineStore('cart', () => {
   const lines = ref<CartLine[]>([])
   const discountCentavos = ref(0)
   const discountReason = ref('')
+  const deliveryFeeCentavos = ref(0)
 
   const subtotalCentavos = computed(() =>
     lines.value.reduce((sum, line) => sum + line.product.price_centavos * line.quantity, 0),
   )
-  const totalCentavos = computed(() => Math.max(subtotalCentavos.value - discountCentavos.value, 0))
+  const totalCentavos = computed(() => Math.max(subtotalCentavos.value - discountCentavos.value + deliveryFeeCentavos.value, 0))
   const cartCount = computed(() => lines.value.reduce((sum, line) => sum + line.quantity, 0))
   const isEmpty = computed(() => lines.value.length === 0)
   const invalidLines = computed(() =>
@@ -87,6 +88,14 @@ export const useCartStore = defineStore('cart', () => {
     discountReason.value = ''
   }
 
+  function setDeliveryFee(centavos: number) {
+    deliveryFeeCentavos.value = Math.max(0, Math.round(centavos))
+  }
+
+  function clearDeliveryFee() {
+    deliveryFeeCentavos.value = 0
+  }
+
   function payload(): CheckoutItem[] {
     return lines.value.map((line) => ({
       product_id: line.product.id,
@@ -98,6 +107,7 @@ export const useCartStore = defineStore('cart', () => {
   function clear() {
     lines.value = []
     clearDiscount()
+    clearDeliveryFee()
   }
 
   function replaceProduct(productId: string, product: CatalogProduct) {
@@ -110,6 +120,7 @@ export const useCartStore = defineStore('cart', () => {
     lines,
     discountCentavos,
     discountReason,
+    deliveryFeeCentavos,
     subtotalCentavos,
     totalCentavos,
     cartCount,
@@ -124,6 +135,8 @@ export const useCartStore = defineStore('cart', () => {
     setLineOptions,
     setDiscount,
     clearDiscount,
+    setDeliveryFee,
+    clearDeliveryFee,
     payload,
     clear,
     replaceProduct,

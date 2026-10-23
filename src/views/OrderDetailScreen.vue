@@ -120,7 +120,7 @@ watch(() => route.params.id, () => void load())
   <section>
     <div class="section-heading">
       <div>
-        <RouterLink :to="{ name: 'sales' }" class="back-link">← Back to sales</RouterLink>
+        <RouterLink :to="{ name: 'history' }" class="back-link">← Back to history</RouterLink>
         <h1>Order detail</h1>
         <p v-if="order" class="subtle">{{ formatDateTime(order.created_at) }} · {{ order.cashier_name ?? 'Team member' }}</p>
       </div>

@@ -117,7 +117,7 @@ onBeforeUnmount(() => {
       type="button"
       class="sync-banner"
       :class="{ locked: offline.needsUnlock }"
-      @click="$router.push({ name: 'more' })"
+      @click="$router.push({ name: 'settings' })"
     >
       {{ syncMessage }}
     </button>

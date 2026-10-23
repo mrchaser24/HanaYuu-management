@@ -23,6 +23,8 @@ const reference = ref('')
 const showDiscount = ref(false)
 const discountInput = ref('')
 const discountReason = ref('')
+const showDelivery = ref(false)
+const deliveryInput = ref('')
 const busy = ref(false)
 const shifts = ref<CashShift[]>([])
 const receipt = ref<{
@@ -46,9 +48,11 @@ const openShift = computed(() =>
   shifts.value.find((shift) => !shift.closed_at && shift.cashier_id === auth.user?.id),
 )
 const referenceRequired = computed(() => Boolean(selectedMethod.value?.requires_reference))
+const deliveryFeeInvalid = computed(() => showDelivery.value && cart.deliveryFeeCentavos > 0 && cart.deliveryFeeCentavos < 1500)
 const canSubmit = computed(() => {
   if (!catalog.catalog || !selectedMethod.value || busy.value) return false
   if (!cart.ready) return false
+  if (deliveryFeeInvalid.value) return false
   if (isCash.value && tenderedCentavos.value < cart.totalCentavos) return false
   if (!isCash.value && referenceRequired.value && reference.value.trim().length < 2) return false
   return true
@@ -74,7 +78,25 @@ function updateDiscount() {
   cart.setDiscount(parsePesoInput(discountInput.value), discountReason.value)
 }
 
+const activeDelivery = computed({
+  get: () => showDelivery.value,
+  set: (value: boolean) => {
+    showDelivery.value = value
+    if (!value) {
+      deliveryInput.value = ''
+      cart.clearDeliveryFee()
+    }
+  },
+})
+
+function updateDeliveryFee() {
+  if (!showDelivery.value) return
+  const centavos = parsePesoInput(deliveryInput.value)
+  cart.setDeliveryFee(centavos)
+}
+
 watch([discountInput, discountReason, showDiscount], updateDiscount)
+watch([deliveryInput, showDelivery], updateDeliveryFee)
 watch(
   () => cart.totalCentavos,
   (total) => {
@@ -215,6 +237,8 @@ function resetOrder() {
   showDiscount.value = false
   discountInput.value = ''
   discountReason.value = ''
+  showDelivery.value = false
+  deliveryInput.value = ''
   retryAfterVault.value = false
   tenderedInput.value = formatPesoInput(0)
 }
@@ -279,12 +303,12 @@ watch(() => auth.activeBranchId, () => void load())
           <strong>Opened with {{ formatPeso(openShift.opening_cash_centavos) }}</strong>
         </div>
         <div><span>Expected cash</span><b>{{ formatPeso(openShift.current_expected_cash_centavos) }}</b></div>
-        <RouterLink :to="{ name: 'cash' }" class="text-link">Manage drawer</RouterLink>
+        <RouterLink :to="{ name: 'record' }" class="text-link">Manage drawer</RouterLink>
       </article>
-      <article v-else class="callout warning">
+      <article v-else class="callout warning pos-info">
         No open cash drawer for you at this branch. You can still sell, but open a shift in Cash drawer for accurate
         reconciliation.
-        <RouterLink :to="{ name: 'cash' }" class="text-link">Open shift</RouterLink>
+        <RouterLink :to="{ name: 'record' }" class="text-link">Open shift</RouterLink>
       </article>
     </div>
 
@@ -340,6 +364,17 @@ watch(() => auth.activeBranchId, () => void load())
           <input v-model="discountInput" inputmode="decimal" placeholder="Discount in ₱" />
           <input v-model="discountReason" placeholder="Reason (required)" maxlength="120" />
         </div>
+        <div class="discount-toggle">
+          <label class="check-row">
+            <input v-model="activeDelivery" type="checkbox" />
+            <span>Add delivery fee</span>
+          </label>
+        </div>
+        <div v-if="showDelivery" class="discount-fields">
+          <input v-model="deliveryInput" inputmode="decimal" placeholder="Delivery fee in ₱ (min ₱15)" />
+          <p v-if="deliveryFeeInvalid" class="form-note">Minimum delivery fee is ₱15.</p>
+        </div>
+        <div v-if="cart.deliveryFeeCentavos > 0" class="total"><span>Delivery fee</span><strong>+ {{ formatPeso(cart.deliveryFeeCentavos) }}</strong></div>
         <div class="total final"><span>Total</span><strong>{{ formatPeso(cart.totalCentavos) }}</strong></div>
 
         <div class="payment-switch" :class="{ stacked: methods.length > 2 }">

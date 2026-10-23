@@ -3,11 +3,11 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const items = [
-  { name: 'dashboard', label: 'Overview', icon: '◌' },
-  { name: 'pos', label: 'POS', icon: '⊞' },
-  { name: 'sales', label: 'Sales', icon: '↗' },
-  { name: 'inventory', label: 'Stock', icon: '▦' },
-  { name: 'more', label: 'More', icon: '•••' },
+  { name: 'home', label: 'Home', icon: '◌' },
+  { name: 'pos', label: 'Sell', icon: '⊞' },
+  { name: 'record', label: 'Record', icon: '+' },
+  { name: 'history', label: 'History', icon: '↗' },
+  { name: 'settings', label: 'Settings', icon: '⚙' },
 ]
 </script>
 
@@ -17,7 +17,7 @@ const items = [
       v-for="item in items"
       :key="item.name"
       :to="{ name: item.name }"
-      :class="{ active: route.name === item.name || (item.name === 'sales' && route.name === 'order') }"
+      :class="{ active: route.name === item.name || (item.name === 'history' && route.name === 'order') }"
     >
       <span>{{ item.icon }}</span>{{ item.label }}
     </RouterLink>

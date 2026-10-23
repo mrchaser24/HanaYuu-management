@@ -1,18 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from './stores/auth'
-import DashboardScreen from './views/DashboardScreen.vue'
+import HomeScreen from './views/HomeScreen.vue'
 import PosScreen from './views/PosScreen.vue'
-import SalesScreen from './views/SalesScreen.vue'
 import OrderDetailScreen from './views/OrderDetailScreen.vue'
-import InventoryScreen from './views/InventoryScreen.vue'
-import ProductionScreen from './views/ProductionScreen.vue'
-import CashScreen from './views/CashScreen.vue'
-import CorrectionsScreen from './views/CorrectionsScreen.vue'
-import ExpensesScreen from './views/ExpensesScreen.vue'
-import PurchasesScreen from './views/PurchasesScreen.vue'
-import ReportsScreen from './views/ReportsScreen.vue'
-import AdminScreen from './views/AdminScreen.vue'
-import MoreScreen from './views/MoreScreen.vue'
+import RecordScreen from './views/RecordScreen.vue'
+import HistoryScreen from './views/HistoryScreen.vue'
+import SettingsScreen from './views/SettingsScreen.vue'
 import LoginScreen from './views/LoginScreen.vue'
 
 declare module 'vue-router' {
@@ -27,29 +20,25 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: LoginScreen, meta: { public: true, title: 'Sign in' } },
-    { path: '/', name: 'dashboard', component: DashboardScreen, meta: { title: 'Overview' } },
-    { path: '/pos', name: 'pos', component: PosScreen, meta: { title: 'Cashier' } },
-    { path: '/sales', name: 'sales', component: SalesScreen, meta: { title: 'Sales' } },
-    { path: '/sales/:id', name: 'order', component: OrderDetailScreen, meta: { title: 'Order' } },
-    { path: '/inventory', name: 'inventory', component: InventoryScreen, meta: { title: 'Inventory' } },
-    { path: '/production', name: 'production', component: ProductionScreen, meta: { title: 'Production' } },
-    { path: '/cash', name: 'cash', component: CashScreen, meta: { title: 'Cash drawer' } },
-    {
-      path: '/corrections',
-      name: 'corrections',
-      component: CorrectionsScreen,
-      meta: { ownerOnly: true, title: 'Corrections' },
-    },
-    { path: '/expenses', name: 'expenses', component: ExpensesScreen, meta: { title: 'Expenses' } },
-    { path: '/purchases', name: 'purchases', component: PurchasesScreen, meta: { title: 'Purchases' } },
-    {
-      path: '/reports',
-      name: 'reports',
-      component: ReportsScreen,
-      meta: { ownerOnly: true, title: 'Reports' },
-    },
-    { path: '/admin', name: 'admin', component: AdminScreen, meta: { ownerOnly: true, title: 'Admin' } },
-    { path: '/more', name: 'more', component: MoreScreen, meta: { title: 'More' } },
+    { path: '/', name: 'home', component: HomeScreen, meta: { title: 'Home' } },
+    { path: '/sell', name: 'pos', component: PosScreen, meta: { title: 'Sell' } },
+    { path: '/record', name: 'record', component: RecordScreen, meta: { title: 'Record' } },
+    { path: '/history', name: 'history', component: HistoryScreen, meta: { title: 'History' } },
+    { path: '/history/:id', name: 'order', component: OrderDetailScreen, meta: { title: 'Order' } },
+    { path: '/settings', name: 'settings', component: SettingsScreen, meta: { title: 'Settings' } },
+    // Legacy redirects
+    { path: '/pos', redirect: '/sell' },
+    { path: '/sales', redirect: '/history' },
+    { path: '/sales/:id', redirect: to => `/history/${to.params.id}` },
+    { path: '/inventory', redirect: '/record' },
+    { path: '/production', redirect: '/record' },
+    { path: '/cash', redirect: '/record' },
+    { path: '/expenses', redirect: '/record' },
+    { path: '/purchases', redirect: '/history' },
+    { path: '/corrections', redirect: '/settings' },
+    { path: '/reports', redirect: '/settings' },
+    { path: '/admin', redirect: '/settings' },
+    { path: '/more', redirect: '/settings' },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
@@ -59,12 +48,12 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (!auth.initialized) await auth.init()
   if (to.meta.public) {
-    return auth.isAuthenticated ? { name: 'dashboard' } : true
+    return auth.isAuthenticated ? { name: 'home' } : true
   }
   if (!auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
-  if (to.meta.ownerOnly && !auth.isOwner) return { name: 'dashboard' }
+  if (to.meta.ownerOnly && !auth.isOwner) return { name: 'home' }
   return true
 })
 
