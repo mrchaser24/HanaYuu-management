@@ -9,6 +9,7 @@ import ProductionScreen from './views/ProductionScreen.vue'
 import CashScreen from './views/CashScreen.vue'
 import CorrectionsScreen from './views/CorrectionsScreen.vue'
 import ExpensesScreen from './views/ExpensesScreen.vue'
+import PurchasesScreen from './views/PurchasesScreen.vue'
 import ReportsScreen from './views/ReportsScreen.vue'
 import AdminScreen from './views/AdminScreen.vue'
 import MoreScreen from './views/MoreScreen.vue'
@@ -40,6 +41,7 @@ export const router = createRouter({
       meta: { ownerOnly: true, title: 'Corrections' },
     },
     { path: '/expenses', name: 'expenses', component: ExpensesScreen, meta: { title: 'Expenses' } },
+    { path: '/purchases', name: 'purchases', component: PurchasesScreen, meta: { title: 'Purchases' } },
     {
       path: '/reports',
       name: 'reports',

@@ -14,6 +14,7 @@ const nav = computed(() => {
     { name: 'pos', label: 'Cashier' },
     { name: 'sales', label: 'Sales' },
     { name: 'inventory', label: 'Inventory' },
+    { name: 'purchases', label: 'Purchases' },
   ]
   if (auth.canViewReports) items.push({ name: 'reports', label: 'Reports' })
   return items

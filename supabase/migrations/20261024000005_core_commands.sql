@@ -534,7 +534,11 @@ create or replace function public.record_restock(
   p_request_id uuid,
   p_supplier text,
   p_note text,
-  p_items jsonb
+  p_items jsonb,
+  p_delivery_fee_centavos integer default 0,
+  p_paid_from_cash boolean default false,
+  p_cash_movement_id uuid default null,
+  p_shift_id uuid default null
 ) returns uuid
 language plpgsql security definer set search_path = public
 as $$
@@ -551,9 +555,13 @@ declare
   v_total integer := 0;
   v_new_qty numeric(14,3);
   v_new_avg numeric(18,6);
+  v_shift_id uuid;
+  v_cash_movement_id uuid;
+  v_deduction_amount integer;
 begin
   if auth.uid() is null then raise exception 'Authentication required'; end if;
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then raise exception 'At least one restock item is required'; end if;
+  if p_delivery_fee_centavos is null or p_delivery_fee_centavos < 0 then raise exception 'Delivery fee cannot be negative'; end if;
 
   select s.id, s.group_id into v_shop_id, v_group_id
   from public.branches b join public.shops s on s.id = b.shop_id where b.id = p_branch_id;
@@ -562,8 +570,8 @@ begin
   select id into v_existing from public.restocks where branch_id = p_branch_id and request_id = p_request_id;
   if v_existing is not null then return v_existing; end if;
 
-  insert into public.restocks (branch_id, request_id, supplier, note, created_by)
-  values (p_branch_id, p_request_id, nullif(trim(p_supplier), ''), nullif(trim(p_note), ''), auth.uid())
+  insert into public.restocks (branch_id, request_id, supplier, note, delivery_fee_centavos, paid_from_cash, cash_movement_id, created_by)
+  values (p_branch_id, p_request_id, nullif(trim(p_supplier), ''), nullif(trim(p_note), ''), coalesce(p_delivery_fee_centavos, 0), coalesce(p_paid_from_cash, false), p_cash_movement_id, auth.uid())
   returning id into v_restock_id;
 
   for v_item in select value from jsonb_array_elements(p_items) loop
@@ -599,10 +607,31 @@ begin
     v_total := v_total + round(v_quantity * v_unit_cost);
   end loop;
 
+  if coalesce(p_paid_from_cash, false) then
+    v_deduction_amount := v_total + coalesce(p_delivery_fee_centavos, 0);
+    if v_deduction_amount <= 0 then raise exception 'Nothing to deduct'; end if;
+
+    if p_shift_id is not null then
+      v_shift_id := p_shift_id;
+    else
+      select id into v_shift_id from public.cash_shifts
+      where branch_id = p_branch_id and closed_at is null
+        and (cashier_id = auth.uid() or public.can_manage_branch(p_branch_id))
+      limit 1;
+    end if;
+
+    if v_shift_id is null then raise exception 'No open shift found for this branch'; end if;
+
+    select public.record_cash_payout(v_shift_id, v_deduction_amount, 'Restock: ' || coalesce(nullif(trim(p_supplier), ''), 'Restock'), p_request_id)
+    into v_cash_movement_id;
+
+    update public.restocks set cash_movement_id = v_cash_movement_id where id = v_restock_id;
+  end if;
+
   update public.restocks set total_cost_centavos = v_total where id = v_restock_id;
   insert into public.audit_events (group_id, branch_id, shop_id, actor_id, action, entity_type, entity_id, metadata)
   values (v_group_id, p_branch_id, v_shop_id, auth.uid(), 'restock_posted', 'restock', v_restock_id,
-    jsonb_build_object('total_cost_centavos', v_total));
+    jsonb_build_object('total_cost_centavos', v_total, 'delivery_fee_centavos', coalesce(p_delivery_fee_centavos, 0), 'paid_from_cash', coalesce(p_paid_from_cash, false), 'cash_movement_id', v_cash_movement_id));
   return v_restock_id;
 end;
 $$;

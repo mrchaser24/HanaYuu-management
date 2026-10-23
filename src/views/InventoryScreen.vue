@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import AppModal from '../components/AppModal.vue'
-import { getInventory, recordRestock } from '../lib/api'
+import { getCashShifts, getInventory, recordRestock } from '../lib/api'
 import { formatDateTime, formatQuantity } from '../lib/datetime'
 import { formatPeso, parsePesoInput } from '../lib/money'
 import { useAuthStore } from '../stores/auth'
@@ -18,6 +18,9 @@ const activeTab = ref<'ingredients' | 'finished' | 'movements'>('ingredients')
 const showRestock = ref(false)
 const supplier = ref('')
 const note = ref('')
+const deliveryFee = ref('0')
+const paidFromCash = ref(false)
+const shiftId = ref<string | null>(null)
 const restockLines = ref<Array<{ ingredient_id: string; quantity: string; unit_cost: string }>>([])
 const busy = ref(false)
 const formError = ref<string | null>(null)
@@ -34,13 +37,26 @@ const draftTotal = computed(() =>
     0,
   ),
 )
+const draftTotalWithFee = computed(() => draftTotal.value + parsePesoInput(deliveryFee.value))
+
+const openShifts = ref<{ id: string; cashier_id: string; opening_cash_centavos: number }[]>([])
+const myOpenShift = computed(() => openShifts.value.find((s) => s.cashier_id === auth.user?.id) ?? null)
 
 async function load() {
   if (!auth.activeBranchId) return
   loading.value = true
   error.value = null
   try {
-    inventory.value = await getInventory(auth.activeBranchId)
+    const [inv, shifts] = await Promise.all([
+      getInventory(auth.activeBranchId),
+      getCashShifts(auth.activeBranchId),
+    ])
+    inventory.value = inv
+    openShifts.value = shifts.map((s) => ({
+      id: s.id,
+      cashier_id: s.cashier_id,
+      opening_cash_centavos: s.opening_cash_centavos,
+    }))
   } catch (loadError) {
     error.value = loadError instanceof Error ? loadError.message : String(loadError)
     inventory.value = null
@@ -53,6 +69,9 @@ function openRestock() {
   showRestock.value = true
   supplier.value = ''
   note.value = ''
+  deliveryFee.value = '0'
+  paidFromCash.value = false
+  shiftId.value = myOpenShift.value?.id ?? null
   formError.value = null
   restockLines.value = [
     { ingredient_id: ingredients.value[0]?.id ?? '', quantity: '', unit_cost: '' },
@@ -82,6 +101,10 @@ async function submitRestock() {
     formError.value = 'Add at least one ingredient with a quantity.'
     return
   }
+  if (paidFromCash.value && !shiftId.value) {
+    formError.value = 'No open shift found for this branch. Open a cash drawer first.'
+    return
+  }
   busy.value = true
   try {
     await recordRestock({
@@ -90,6 +113,10 @@ async function submitRestock() {
       supplier: supplier.value,
       note: note.value,
       items,
+      deliveryFee: parsePesoInput(deliveryFee.value),
+      paidFromCash: paidFromCash.value,
+      cashMovementId: null,
+      shiftId: paidFromCash.value ? shiftId.value : undefined,
     })
     showRestock.value = false
     ui.success('Stock received', 'Ingredient balances and average costs were updated.')
@@ -208,6 +235,25 @@ watch(() => auth.activeBranchId, () => void load())
           <label><span>Supplier</span><input v-model="supplier" maxlength="120" placeholder="Optional supplier" /></label>
           <label><span>Reference / note</span><input v-model="note" maxlength="200" placeholder="Optional note" /></label>
         </div>
+        <div class="two-column">
+          <label>
+            <span>Delivery fee (₱)</span>
+            <input v-model="deliveryFee" inputmode="decimal" placeholder="0.00" />
+          </label>
+          <label class="check-field">
+            <input v-model="paidFromCash" type="checkbox" />
+            <span>Paid from cash drawer</span>
+          </label>
+        </div>
+        <div v-if="paidFromCash" class="two-column">
+          <label>
+            <span>Shift</span>
+            <select v-model="shiftId" :disabled="!myOpenShift">
+              <option v-for="s in openShifts" :key="s.id" :value="s.id">{{ s.cashier_id === auth.user?.id ? 'Your drawer' : 'Team drawer' }} (opened {{ formatPeso(s.opening_cash_centavos) }})</option>
+            </select>
+          </label>
+          <span v-if="!myOpenShift" class="form-note">No open shift. Open a drawer in Cash drawer first.</span>
+        </div>
         <div class="restock-lines">
           <div v-for="(line, index) in restockLines" :key="index" class="restock-line">
             <label>
@@ -229,7 +275,7 @@ watch(() => auth.activeBranchId, () => void load())
         </div>
         <div class="inline-links">
           <button type="button" class="text-link" @click="addLine">+ Add another ingredient</button>
-          <span class="draft-total">Draft total <b>{{ formatPeso(draftTotal) }}</b></span>
+          <span class="draft-total">Draft total <b>{{ formatPeso(draftTotalWithFee) }}</b></span>
         </div>
         <p class="form-note">
           Current draft: {{ restockLines.map((line) => `${ingredientName(line.ingredient_id)} ${line.quantity || 0}`).join(' · ') }}.

@@ -379,10 +379,47 @@ export interface Expense {
   category: string
   description: string
   amount_centavos: number
+  delivery_fee_centavos: number
   paid_from_cash: boolean
   cash_movement_id: string | null
   spent_at: string
   created_at: string
+  created_by_name: string | null
+}
+
+export interface RestockItem {
+  ingredient_id: string
+  ingredient_name: string
+  quantity: number
+  unit_cost_centavos: number
+}
+
+export interface Restock {
+  id: string
+  branch_id: string
+  supplier: string | null
+  note: string | null
+  total_cost_centavos: number
+  delivery_fee_centavos: number
+  paid_from_cash: boolean
+  cash_movement_id: string | null
+  created_at: string
+  created_by_name: string | null
+  items: RestockItem[]
+}
+
+export interface PurchaseRow {
+  id: string
+  type: 'restock' | 'expense'
+  purchase_date: string
+  supplier_category: string
+  description: string
+  items: string
+  base_cost_centavos: number
+  delivery_fee_centavos: number
+  total_deducted_centavos: number
+  paid_from_cash: boolean
+  cash_movement_id: string | null
   created_by_name: string | null
 }
 

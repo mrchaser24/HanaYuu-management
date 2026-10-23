@@ -236,7 +236,9 @@ create or replace function public.record_expense(
   p_amount_centavos integer,
   p_paid_from_cash boolean default false,
   p_cash_movement_id uuid default null,
-  p_spent_at timestamptz default now()
+  p_spent_at timestamptz default now(),
+  p_delivery_fee_centavos integer default 0,
+  p_shift_id uuid default null
 ) returns uuid
 language plpgsql security definer set search_path = public
 as $$
@@ -244,11 +246,15 @@ declare
   v_id uuid;
   v_shop_id uuid;
   v_group_id uuid;
+  v_shift_id uuid;
+  v_cash_movement_id uuid;
+  v_deduction_amount integer;
 begin
   if auth.uid() is null then raise exception 'Authentication required'; end if;
   if p_amount_centavos is null or p_amount_centavos <= 0 then raise exception 'Expense amount must be positive'; end if;
   if p_category is null or char_length(trim(p_category)) < 2 then raise exception 'A category is required'; end if;
   if p_description is null or char_length(trim(p_description)) < 3 then raise exception 'A description is required'; end if;
+  if p_delivery_fee_centavos is null or p_delivery_fee_centavos < 0 then raise exception 'Delivery fee cannot be negative'; end if;
   if not public.can_access_branch(p_branch_id) then raise exception 'Branch access denied'; end if;
 
   select s.id, s.group_id into v_shop_id, v_group_id
@@ -263,15 +269,36 @@ begin
   end if;
 
   insert into public.expenses (
-    branch_id, category, description, amount_centavos, paid_from_cash, cash_movement_id, spent_at, created_by
+    branch_id, category, description, amount_centavos, paid_from_cash, cash_movement_id, spent_at, created_by, delivery_fee_centavos
   ) values (
     p_branch_id, trim(p_category), trim(p_description), p_amount_centavos,
-    coalesce(p_paid_from_cash, false), p_cash_movement_id, coalesce(p_spent_at, now()), auth.uid()
+    coalesce(p_paid_from_cash, false), null, coalesce(p_spent_at, now()), auth.uid(), coalesce(p_delivery_fee_centavos, 0)
   ) returning id into v_id;
+
+  if coalesce(p_paid_from_cash, false) then
+    v_deduction_amount := p_amount_centavos + coalesce(p_delivery_fee_centavos, 0);
+    if v_deduction_amount <= 0 then raise exception 'Nothing to deduct'; end if;
+
+    if p_shift_id is not null then
+      v_shift_id := p_shift_id;
+    else
+      select id into v_shift_id from public.cash_shifts
+      where branch_id = p_branch_id and closed_at is null
+        and (cashier_id = auth.uid() or public.can_manage_branch(p_branch_id))
+      limit 1;
+    end if;
+
+    if v_shift_id is null then raise exception 'No open shift found for this branch'; end if;
+
+    select public.record_cash_payout(v_shift_id, v_deduction_amount, 'Expense: ' || coalesce(nullif(trim(p_category), ''), 'Expense') || ' - ' || coalesce(nullif(trim(p_description), ''), ''), gen_random_uuid())
+    into v_cash_movement_id;
+
+    update public.expenses set cash_movement_id = v_cash_movement_id where id = v_id;
+  end if;
 
   insert into public.audit_events (group_id, branch_id, shop_id, actor_id, action, entity_type, entity_id, metadata)
   values (v_group_id, p_branch_id, v_shop_id, auth.uid(), 'expense_recorded', 'expense', v_id,
-    jsonb_build_object('amount_centavos', p_amount_centavos, 'category', p_category));
+    jsonb_build_object('amount_centavos', p_amount_centavos, 'category', p_category, 'delivery_fee_centavos', coalesce(p_delivery_fee_centavos, 0), 'paid_from_cash', coalesce(p_paid_from_cash, false), 'cash_movement_id', coalesce(v_cash_movement_id, p_cash_movement_id)));
   return v_id;
 end;
 $$;

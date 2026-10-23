@@ -19,6 +19,7 @@ import type {
   PendingReview,
   ProductionBatch,
   Profile,
+  PurchaseRow,
   ReportResponse,
   Role,
   SaleSummary,
@@ -146,6 +147,10 @@ export function recordRestock(input: {
   supplier: string
   note: string
   items: Array<{ ingredient_id: string; quantity: number; unit_cost_centavos: number }>
+  deliveryFee?: number
+  paidFromCash?: boolean
+  cashMovementId?: string | null
+  shiftId?: string | null
 }): Promise<string> {
   return rpc<string>('record_restock', {
     p_branch_id: input.branchId,
@@ -153,6 +158,10 @@ export function recordRestock(input: {
     p_supplier: input.supplier,
     p_note: input.note,
     p_items: input.items,
+    p_delivery_fee_centavos: input.deliveryFee ?? 0,
+    p_paid_from_cash: input.paidFromCash ?? false,
+    p_cash_movement_id: input.cashMovementId ?? null,
+    p_shift_id: input.shiftId ?? null,
   })
 }
 
@@ -268,6 +277,8 @@ export function recordExpense(input: {
   paidFromCash: boolean
   cashMovementId: string | null
   spentAt: string
+  deliveryFee?: number
+  shiftId?: string | null
 }): Promise<string> {
   return rpc<string>('record_expense', {
     p_branch_id: input.branchId,
@@ -275,9 +286,29 @@ export function recordExpense(input: {
     p_description: input.description,
     p_amount_centavos: input.amountCentavos,
     p_paid_from_cash: input.paidFromCash,
-    p_cash_movement_id: input.cashMovementId,
+    p_cash_movement_id: input.cashMovementId ?? null,
     p_spent_at: input.spentAt,
+    p_delivery_fee_centavos: input.deliveryFee ?? 0,
+    p_shift_id: input.shiftId ?? null,
   })
+}
+
+export function recordCashPayout(input: {
+  shiftId: string
+  amountCentavos: number
+  reason: string
+  requestId: string
+}): Promise<string> {
+  return rpc<string>('record_cash_payout', {
+    p_shift_id: input.shiftId,
+    p_amount_centavos: input.amountCentavos,
+    p_reason: input.reason,
+    p_request_id: input.requestId,
+  })
+}
+
+export function getPurchases(branchId: string, from?: string, to?: string): Promise<PurchaseRow[]> {
+  return rpc<PurchaseRow[]>('get_purchases', { p_branch_id: branchId, p_from: from ?? null, p_to: to ?? null })
 }
 
 export function getReports(

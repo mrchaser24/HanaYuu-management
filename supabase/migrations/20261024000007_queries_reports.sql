@@ -647,7 +647,7 @@ begin
   where o.branch_id = any(v_branches) and o.created_at >= v_from and o.created_at < v_to
     and o.status in ('completed', 'refunded', 'voided');
 
-  select coalesce(sum(e.amount_centavos), 0) into v_expenses
+  select coalesce(sum(e.amount_centavos + e.delivery_fee_centavos), 0) + coalesce((select sum(delivery_fee_centavos) from public.restocks where branch_id = any(v_branches) and created_at >= v_from and created_at < v_to), 0) into v_expenses
   from public.expenses e where e.branch_id = any(v_branches) and e.spent_at >= v_from and e.spent_at < v_to;
 
   select
