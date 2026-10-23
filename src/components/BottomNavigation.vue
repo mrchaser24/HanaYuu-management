@@ -1,20 +1,25 @@
 <script setup lang="ts">
-defineProps<{ active: string }>()
-defineEmits<{ change: [view: string] }>()
+import { useRoute } from 'vue-router'
 
+const route = useRoute()
 const items = [
-  { id: 'dashboard', label: 'Overview', icon: '◌' },
-  { id: 'pos', label: 'POS', icon: '⊞' },
-  { id: 'sales', label: 'Sales', icon: '↗' },
-  { id: 'inventory', label: 'Stock', icon: '▦' },
-  { id: 'more', label: 'More', icon: '•••' },
+  { name: 'dashboard', label: 'Overview', icon: '◌' },
+  { name: 'pos', label: 'POS', icon: '⊞' },
+  { name: 'sales', label: 'Sales', icon: '↗' },
+  { name: 'inventory', label: 'Stock', icon: '▦' },
+  { name: 'more', label: 'More', icon: '•••' },
 ]
 </script>
 
 <template>
   <nav class="bottom-nav" aria-label="Main navigation">
-    <button v-for="item in items" :key="item.id" :class="{ active: active === item.id }" @click="$emit('change', item.id)">
+    <RouterLink
+      v-for="item in items"
+      :key="item.name"
+      :to="{ name: item.name }"
+      :class="{ active: route.name === item.name || (item.name === 'sales' && route.name === 'order') }"
+    >
       <span>{{ item.icon }}</span>{{ item.label }}
-    </button>
+    </RouterLink>
   </nav>
 </template>

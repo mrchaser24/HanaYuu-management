@@ -1,46 +1,68 @@
 <script setup lang="ts">
-import { useBusinessStore } from '../stores/business'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { useUiStore } from '../stores/ui'
 
-defineProps<{ active: string }>()
-defineEmits<{ change: [view: string] }>()
+const auth = useAuthStore()
+const ui = useUiStore()
+const route = useRoute()
 
-const store = useBusinessStore()
+const nav = computed(() => {
+  const items = [
+    { name: 'dashboard', label: 'Overview' },
+    { name: 'pos', label: 'Cashier' },
+    { name: 'sales', label: 'Sales' },
+    { name: 'inventory', label: 'Inventory' },
+  ]
+  if (auth.canViewReports) items.push({ name: 'reports', label: 'Reports' })
+  return items
+})
+
+function changeBranch(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  auth.setBranch(value)
+}
 </script>
 
 <template>
   <header class="app-header">
-    <div class="brand">
+    <RouterLink class="brand" :to="{ name: 'dashboard' }" aria-label="Benta overview">
       <div class="brand-mark">B</div>
       <div>
         <strong>Benta</strong>
         <span>Business control</span>
       </div>
-    </div>
+    </RouterLink>
 
     <nav class="desktop-nav" aria-label="Primary navigation">
-      <button :class="{ active: active === 'dashboard' }" @click="$emit('change', 'dashboard')">Overview</button>
-      <button :class="{ active: active === 'pos' }" @click="$emit('change', 'pos')">Cashier</button>
-      <button :class="{ active: active === 'inventory' }" @click="$emit('change', 'inventory')">Inventory</button>
+      <RouterLink
+        v-for="item in nav"
+        :key="item.name"
+        :to="{ name: item.name }"
+        :class="{ active: route.name === item.name || (item.name === 'sales' && route.name === 'order') }"
+      >
+        {{ item.label }}
+      </RouterLink>
     </nav>
+
     <div class="context-controls">
-      <label>
+      <label v-if="auth.branchesForRole.length > 1" class="header-select">
         <span class="sr-only">Active branch</span>
-        <select :value="store.branch" @change="store.setBranch(($event.target as HTMLSelectElement).value)">
-          <option>Downtown Branch</option>
-          <option>Market Branch</option>
+        <select :value="auth.activeBranchId ?? ''" :disabled="!auth.branchesForRole.length" @change="changeBranch">
+          <option v-for="branch in auth.branchesForRole" :key="branch.id" :value="branch.id">
+            {{ branch.name }}
+          </option>
         </select>
       </label>
-      <label>
-        <span class="sr-only">Role preview</span>
-        <select :value="store.role" @change="store.setRole(($event.target as HTMLSelectElement).value as 'super_admin' | 'owner' | 'staff')">
-          <option value="staff">Staff</option>
-          <option value="owner">Owner</option>
-          <option value="super_admin">Super admin</option>
-        </select>
-      </label>
-      <span class="status" :class="store.isOnline ? 'online' : 'offline'">
-        <i></i>{{ store.isOnline ? 'Online' : 'Offline' }}
+      <span v-else-if="auth.activeBranch" class="branch-chip">{{ auth.activeBranch.name }}</span>
+      <span class="status" :class="ui.online ? 'online' : 'offline'">
+        <i></i>{{ ui.online ? 'Online' : 'Offline' }}
       </span>
+      <RouterLink class="user-chip" :to="{ name: 'more' }" :title="auth.displayName">
+        <span>{{ auth.displayName.slice(0, 1).toUpperCase() }}</span>
+        <em>{{ auth.role?.replace('_', ' ') ?? 'no role' }}</em>
+      </RouterLink>
     </div>
   </header>
 </template>
