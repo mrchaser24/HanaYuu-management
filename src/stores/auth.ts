@@ -22,6 +22,10 @@ function branchKey(userId: string) {
   return `benta.branch.${userId}`
 }
 
+function shopKey(userId: string) {
+  return `benta.shop.${userId}`
+}
+
 function highestRole(memberships: Membership[]): Role | null {
   if (memberships.some((membership) => membership.role === 'super_admin')) return 'super_admin'
   if (memberships.some((membership) => membership.role === 'owner')) return 'owner'
@@ -50,6 +54,7 @@ function writeCachedContext(userId: string, context: ContextResponse) {
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<Session | null>(null)
   const context = ref<ContextResponse>({ ...EMPTY_CONTEXT })
+  const activeShopId = ref<string | null>(null)
   const activeBranchId = ref<string | null>(null)
   const activeGroupId = ref<string | null>(null)
   const initialized = ref(false)
@@ -79,8 +84,10 @@ export const useAuthStore = defineStore('auth', () => {
     () => branches.value.find((branch) => branch.id === activeBranchId.value) ?? null,
   )
   const activeShop = computed<Shop | null>(() => {
-    if (!activeBranch.value) return shops.value[0] ?? null
-    return shops.value.find((shop) => shop.id === activeBranch.value?.shop_id) ?? null
+    const selected = shops.value.find((shop) => shop.id === activeShopId.value)
+    if (selected) return selected
+    const branchShop = shops.value.find((shop) => shop.id === activeBranch.value?.shop_id)
+    return branchShop ?? null
   })
   const activeGroup = computed<BusinessGroup | null>(() => {
     if (activeGroupId.value) {
@@ -89,7 +96,6 @@ export const useAuthStore = defineStore('auth', () => {
     if (activeShop.value) return groups.value.find((group) => group.id === activeShop.value?.group_id) ?? null
     return groups.value[0] ?? null
   })
-  const activeShopId = computed(() => activeShop.value?.id ?? null)
   const activeGroupIdValue = computed(() => activeGroup.value?.id ?? null)
 
   const canManageShop = computed(() => {
@@ -100,7 +106,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!activeBranchId.value || !role.value) return false
     return role.value === 'super_admin' || role.value === 'owner'
   })
-  const canViewReports = computed(() => canManageBranch.value)
+  const canViewReports = computed(() => role.value === 'super_admin' || role.value === 'owner')
 
   const branchesForRole = computed(() => {
     if (role.value === 'staff') {
@@ -110,6 +116,11 @@ export const useAuthStore = defineStore('auth', () => {
       return branches.value.filter((branch) => ids.has(branch.id))
     }
     return branches.value
+  })
+
+  const branchesForShop = computed(() => {
+    const shopId = activeShop.value?.id
+    return shopId ? branchesForRole.value.filter((branch) => branch.shop_id === shopId) : []
   })
 
   function applyContext(next: ContextResponse) {
@@ -124,16 +135,33 @@ export const useAuthStore = defineStore('auth', () => {
       devices: next.devices ?? [],
     }
     const storedBranch = user.value ? localStorage.getItem(branchKey(user.value.id)) : null
-    const available = branches.value
-    if (!activeBranchId.value || !available.some((branch) => branch.id === activeBranchId.value)) {
-      activeBranchId.value =
-        storedBranch && available.some((branch) => branch.id === storedBranch)
-          ? storedBranch
-          : available[0]?.id ?? null
+    const storedShop = user.value ? localStorage.getItem(shopKey(user.value.id)) : null
+    const shopForBranch = (branchId: string | null) => {
+      if (!branchId || !branchesForRole.value.some((branch) => branch.id === branchId)) return null
+      const branch = branchesForRole.value.find((item) => item.id === branchId)
+      return shops.value.find((shop) => shop.id === branch?.shop_id) ?? null
     }
-    if (!groups.value.some((group) => group.id === activeGroupId.value)) {
-      activeGroupId.value = groups.value[0]?.id ?? null
-    }
+
+    let shop = shops.value.find((item) => item.id === activeShopId.value) ?? null
+    if (!shop) shop = shopForBranch(activeBranchId.value)
+    if (!shop) shop = shopForBranch(storedBranch)
+    if (!shop && storedShop) shop = shops.value.find((item) => item.id === storedShop) ?? null
+    if (!shop) shop = shops.value[0] ?? null
+
+    const shopBranches = shop ? branchesForRole.value.filter((branch) => branch.shop_id === shop?.id) : []
+    const branch =
+      shopBranches.find((item) => item.id === activeBranchId.value) ??
+      shopBranches.find((item) => item.id === storedBranch) ??
+      shopBranches[0] ??
+      null
+
+    activeShopId.value = shop?.id ?? null
+    activeBranchId.value = branch?.id ?? null
+    activeGroupId.value =
+      shop?.group_id ??
+      (groups.value.some((group) => group.id === activeGroupId.value)
+        ? activeGroupId.value
+        : groups.value[0]?.id ?? null)
   }
 
   async function loadContext() {
@@ -170,29 +198,41 @@ export const useAuthStore = defineStore('auth', () => {
     await loadContext()
   }
 
+  function setShop(shopId: string) {
+    const shop = shops.value.find((item) => item.id === shopId)
+    if (!shop) return
+    const branch = branchesForRole.value.find((item) => item.shop_id === shop.id) ?? null
+    activeShopId.value = shop.id
+    activeGroupId.value = shop.group_id
+    activeBranchId.value = branch?.id ?? null
+  }
+
   function setBranch(branchId: string) {
-    if (!branches.value.some((branch) => branch.id === branchId)) return
-    activeBranchId.value = branchId
-    if (user.value) localStorage.setItem(branchKey(user.value.id), branchId)
-    const branch = branches.value.find((item) => item.id === branchId)
-    const shop = shops.value.find((item) => item.id === branch?.shop_id)
-    if (shop) activeGroupId.value = shop.group_id
+    const branch = branchesForRole.value.find((item) => item.id === branchId)
+    if (!branch) return
+    const shop = shops.value.find((item) => item.id === branch.shop_id)
+    if (!shop) return
+    activeShopId.value = shop.id
+    activeBranchId.value = branch.id
+    activeGroupId.value = shop.group_id
   }
 
   function setGroup(groupId: string) {
     if (!groups.value.some((group) => group.id === groupId)) return
-    activeGroupId.value = groupId
-    const groupShopIds = new Set(shops.value.filter((shop) => shop.group_id === groupId).map((shop) => shop.id))
-    const currentBranch = activeBranch.value
-    if (!currentBranch || !groupShopIds.has(currentBranch.shop_id)) {
-      const nextBranch = branches.value.find((branch) => groupShopIds.has(branch.shop_id))
-      if (nextBranch) setBranch(nextBranch.id)
+    const shop = shops.value.find((item) => item.group_id === groupId)
+    if (shop) {
+      setShop(shop.id)
+      return
     }
+    activeGroupId.value = groupId
+    activeShopId.value = null
+    activeBranchId.value = null
   }
 
   function clearSessionState() {
     session.value = null
     context.value = { ...EMPTY_CONTEXT }
+    activeShopId.value = null
     activeBranchId.value = null
     activeGroupId.value = null
     authError.value = null
@@ -259,9 +299,12 @@ export const useAuthStore = defineStore('auth', () => {
     unsubscribe = null
   }
 
-  watch(activeBranchId, (branchId) => {
+  watch([activeShopId, activeBranchId], ([shopId, branchId]) => {
     if (!user.value) return
+    if (shopId) localStorage.setItem(shopKey(user.value.id), shopId)
+    else localStorage.removeItem(shopKey(user.value.id))
     if (branchId) localStorage.setItem(branchKey(user.value.id), branchId)
+    else localStorage.removeItem(branchKey(user.value.id))
   })
 
   return {
@@ -274,6 +317,7 @@ export const useAuthStore = defineStore('auth', () => {
     shops,
     branches,
     branchesForRole,
+    branchesForShop,
     devices,
     activeBranchId,
     activeGroupId: activeGroupIdValue,
@@ -300,6 +344,7 @@ export const useAuthStore = defineStore('auth', () => {
     signOut,
     loadContext,
     refreshContext,
+    setShop,
     setBranch,
     setGroup,
     dispose,

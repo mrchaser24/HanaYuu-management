@@ -81,8 +81,9 @@ watch(
 watch(
   () => auth.activeBranchId,
   async (branchId, previous) => {
-    if (branchId && previous && branchId !== previous) {
-      cart.clear()
+    if (branchId === previous) return
+    cart.clear()
+    if (branchId) {
       await offline.inspectDevice()
       await trySync()
     }

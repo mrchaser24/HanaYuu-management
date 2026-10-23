@@ -39,7 +39,10 @@ const data = ref<AdminData | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const activeTab = ref<AdminTab>('structure')
-const selectedShopId = ref(auth.activeShopId ?? '')
+const selectedShopId = computed({
+  get: () => auth.activeShopId ?? '',
+  set: (shopId: string) => auth.setShop(shopId),
+})
 
 const showShop = ref(false)
 const showBranch = ref(false)
@@ -152,8 +155,8 @@ async function load() {
   error.value = null
   try {
     data.value = await getAdminData(auth.activeGroup.id)
-    if (!shops.value.some((shop) => shop.id === selectedShopId.value)) {
-      selectedShopId.value = shops.value[0]?.id ?? ''
+    if (shops.value.length && !shops.value.some((shop) => shop.id === auth.activeShopId)) {
+      auth.setShop(shops.value[0].id)
     }
     syncSettingsForm()
   } catch (loadError) {
@@ -226,8 +229,9 @@ async function submitShop() {
   try {
     const id = await createShop(auth.activeGroup.id, newShopName.value)
     showShop.value = false
+    await auth.refreshContext()
+    auth.setShop(id)
     await load()
-    selectedShopId.value = id
     ui.success('Shop created')
   } catch (submitError) {
     formError.value = submitError instanceof Error ? submitError.message : String(submitError)
@@ -247,10 +251,11 @@ async function submitBranch() {
   busy.value = true
   formError.value = null
   try {
-    await createBranch(currentShop.value.id, branchName.value)
+    const id = await createBranch(currentShop.value.id, branchName.value)
     showBranch.value = false
-    await load()
     await auth.refreshContext()
+    auth.setBranch(id)
+    await load()
     ui.success('Branch created')
   } catch (submitError) {
     formError.value = submitError instanceof Error ? submitError.message : String(submitError)
@@ -270,8 +275,16 @@ function startMember() {
 
 async function submitMember() {
   if (!auth.activeGroup) return
-  busy.value = true
   formError.value = null
+  if (memberRole.value !== 'super_admin' && !memberShopId.value) {
+    formError.value = 'Choose a shop for this person.'
+    return
+  }
+  if (memberRole.value === 'staff' && !memberBranchOptions.value.some((branch) => branch.id === memberBranchId.value)) {
+    formError.value = 'Choose a branch that belongs to the selected shop.'
+    return
+  }
+  busy.value = true
   try {
     await addMembership({
       email: memberEmail.value,
@@ -630,6 +643,28 @@ async function wipe(deviceId: string, label: string) {
   }
 }
 
+watch(memberShopId, () => {
+  memberBranchId.value = memberRole.value === 'staff' ? memberBranchOptions.value[0]?.id ?? '' : ''
+  formError.value = null
+})
+watch(memberRole, (role) => {
+  if (role === 'super_admin') {
+    memberBranchId.value = ''
+  } else if (role === 'owner') {
+    memberBranchId.value = ''
+    if (!shops.value.some((shop) => shop.id === memberShopId.value)) {
+      memberShopId.value = currentShop.value?.id ?? shops.value[0]?.id ?? ''
+    }
+  } else {
+    if (!shops.value.some((shop) => shop.id === memberShopId.value)) {
+      memberShopId.value = currentShop.value?.id ?? shops.value[0]?.id ?? ''
+    }
+    if (!memberBranchOptions.value.some((branch) => branch.id === memberBranchId.value)) {
+      memberBranchId.value = memberBranchOptions.value[0]?.id ?? ''
+    }
+  }
+  formError.value = null
+})
 watch(selectedShopId, () => syncSettingsForm())
 watch(activeTab, (tab) => {
   if (tab === 'audit') void loadAudit()
@@ -637,6 +672,7 @@ watch(activeTab, (tab) => {
 watch(
   () => auth.activeBranchId,
   () => {
+    void refreshCatalog()
     if (activeTab.value === 'audit') void loadAudit()
   },
 )
@@ -956,8 +992,9 @@ onMounted(async () => {
             <option v-for="branch in memberBranchOptions" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
           </select>
         </label>
+        <p v-if="memberRole === 'staff' && !memberBranchOptions.length" class="form-note">This shop has no branches. Create a branch first.</p>
         <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="dialog-actions"><button type="button" class="secondary" @click="showMember = false">Cancel</button><button type="submit" class="primary" :disabled="busy">{{ busy ? 'Adding…' : 'Add member' }}</button></div>
+        <div class="dialog-actions"><button type="button" class="secondary" @click="showMember = false">Cancel</button><button type="submit" class="primary" :disabled="busy || (memberRole !== 'super_admin' && !memberShopId) || (memberRole === 'staff' && !memberBranchId)">{{ busy ? 'Adding…' : 'Add member' }}</button></div>
       </form>
     </AppModal>
 

@@ -19,6 +19,11 @@ const nav = computed(() => {
   return items
 })
 
+function changeShop(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  auth.setShop(value)
+}
+
 function changeBranch(event: Event) {
   const value = (event.target as HTMLSelectElement).value
   auth.setBranch(value)
@@ -47,15 +52,22 @@ function changeBranch(event: Event) {
     </nav>
 
     <div class="context-controls">
-      <label v-if="auth.branchesForRole.length > 1" class="header-select">
+      <label v-if="auth.shops.length > 1" class="header-select shop-select">
+        <span class="sr-only">Active shop</span>
+        <select :value="auth.activeShopId ?? ''" @change="changeShop">
+          <option v-for="shop in auth.shops" :key="shop.id" :value="shop.id">{{ shop.name }}</option>
+        </select>
+      </label>
+      <label v-if="auth.branchesForShop.length > 1" class="header-select">
         <span class="sr-only">Active branch</span>
-        <select :value="auth.activeBranchId ?? ''" :disabled="!auth.branchesForRole.length" @change="changeBranch">
-          <option v-for="branch in auth.branchesForRole" :key="branch.id" :value="branch.id">
+        <select :value="auth.activeBranchId ?? ''" @change="changeBranch">
+          <option v-for="branch in auth.branchesForShop" :key="branch.id" :value="branch.id">
             {{ branch.name }}
           </option>
         </select>
       </label>
       <span v-else-if="auth.activeBranch" class="branch-chip">{{ auth.activeBranch.name }}</span>
+      <span v-else-if="auth.activeShop" class="branch-chip muted">No branches</span>
       <span class="status" :class="ui.online ? 'online' : 'offline'">
         <i></i>{{ ui.online ? 'Online' : 'Offline' }}
       </span>

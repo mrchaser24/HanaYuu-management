@@ -59,7 +59,7 @@ async function load() {
   loading.value = false
 }
 
-watch([selectedScope, selectedDate, () => auth.activeBranchId], () => void load())
+watch([selectedScope, selectedDate, () => auth.activeBranchId, () => auth.activeShopId], () => void load())
 watch(
   scopeOptions,
   (options) => {

@@ -46,7 +46,16 @@ async function load() {
   }
 }
 
-watch([from, to, selectedScope, () => auth.activeBranchId], () => void load())
+watch([from, to, selectedScope, () => auth.activeBranchId, () => auth.activeShopId], () => void load())
+watch(
+  scopeOptions,
+  (options) => {
+    if (!options.some((option) => option.type === selectedScope.value) && options[0]) {
+      selectedScope.value = options[0].type
+    }
+  },
+  { immediate: true },
+)
 onMounted(() => void load())
 </script>
 
