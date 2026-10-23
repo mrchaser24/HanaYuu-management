@@ -563,3 +563,9 @@ input[type="checkbox"] { width: auto; min-height: 0; accent-color: var(--green);
   .panel, .metric-card { box-shadow: none; break-inside: avoid; }
   .report-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* Shop / branch inline edit & archive */
+.inline-edit-input { flex: 1; border: 1px solid var(--accent-green, #1b8d67); border-radius: 7px; padding: 6px 9px; font-size: 13px; min-width: 0; }
+.inline-edit-input:focus { outline: 3px solid #1b8d6740; outline-offset: 1px; }
+.simple-row.archived { opacity: 0.55; }
+.simple-row.archived strong { text-decoration: line-through; }

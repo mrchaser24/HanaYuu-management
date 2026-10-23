@@ -25,6 +25,7 @@ export interface Shop {
   name: string
   timezone: string
   config_revision: number
+  active: boolean
   created_at: string
 }
 
@@ -32,6 +33,7 @@ export interface Branch {
   id: string
   shop_id: string
   name: string
+  active: boolean
   created_at: string
 }
 

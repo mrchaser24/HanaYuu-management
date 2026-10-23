@@ -20,7 +20,10 @@ import {
   upsertProduct,
   upsertProductOption,
   upsertRecipeComponent,
-  updateShopName
+  updateShopName,
+  updateBranchName,
+  setShopActive,
+  setBranchActive,
 } from '../lib/api'
 import { formatDateTime, formatQuantity } from '../lib/datetime'
 import { formatPeso, formatPesoInput, parsePesoInput } from '../lib/money'
@@ -58,6 +61,12 @@ const formError = ref<string | null>(null)
 const shopName = ref('')
 const newShopName = ref('')
 const branchName = ref('')
+
+// Inline shop/branch editing
+const editingShopId = ref<string | null>(null)
+const editShopNameValue = ref('')
+const editingBranchId = ref<string | null>(null)
+const editBranchNameValue = ref('')
 const memberEmail = ref('')
 const memberRole = ref<Role>('staff')
 const memberShopId = ref('')
@@ -621,6 +630,92 @@ async function updateName() {
   }
 }
 
+function startEditShop(shopId: string, currentName: string) {
+  editingShopId.value = shopId
+  editShopNameValue.value = currentName
+}
+
+function cancelEditShop() {
+  editingShopId.value = null
+  editShopNameValue.value = ''
+}
+
+async function saveEditShop(shopId: string) {
+  const name = editShopNameValue.value.trim()
+  if (!name) return
+  busy.value = true
+  try {
+    await updateShopName({ shopId, name, version: null })
+    await load()
+    await auth.refreshContext()
+    cancelEditShop()
+    ui.success('Shop renamed')
+  } catch (err) {
+    ui.error('Could not rename shop', err instanceof Error ? err.message : String(err))
+  } finally {
+    busy.value = false
+  }
+}
+
+async function toggleShopActive(shopId: string, currentlyActive: boolean) {
+  const verb = currentlyActive ? 'archive' : 'restore'
+  if (!window.confirm(`${currentlyActive ? 'Archive' : 'Restore'} this shop? Staff will ${currentlyActive ? 'lose access until restored' : 'regain access'}.`)) return
+  busy.value = true
+  try {
+    await setShopActive(shopId, !currentlyActive)
+    await load()
+    await auth.refreshContext()
+    ui.success(`Shop ${verb}d`)
+  } catch (err) {
+    ui.error(`Could not ${verb} shop`, err instanceof Error ? err.message : String(err))
+  } finally {
+    busy.value = false
+  }
+}
+
+function startEditBranch(branchId: string, currentName: string) {
+  editingBranchId.value = branchId
+  editBranchNameValue.value = currentName
+}
+
+function cancelEditBranch() {
+  editingBranchId.value = null
+  editBranchNameValue.value = ''
+}
+
+async function saveEditBranch(branchId: string) {
+  const name = editBranchNameValue.value.trim()
+  if (!name) return
+  busy.value = true
+  try {
+    await updateBranchName(branchId, name)
+    await load()
+    await auth.refreshContext()
+    cancelEditBranch()
+    ui.success('Branch renamed')
+  } catch (err) {
+    ui.error('Could not rename branch', err instanceof Error ? err.message : String(err))
+  } finally {
+    busy.value = false
+  }
+}
+
+async function toggleBranchActive(branchId: string, currentlyActive: boolean) {
+  const verb = currentlyActive ? 'archive' : 'restore'
+  if (!window.confirm(`${currentlyActive ? 'Archive' : 'Restore'} this branch?`)) return
+  busy.value = true
+  try {
+    await setBranchActive(branchId, !currentlyActive)
+    await load()
+    await auth.refreshContext()
+    ui.success(`Branch ${verb}d`)
+  } catch (err) {
+    ui.error(`Could not ${verb} branch`, err instanceof Error ? err.message : String(err))
+  } finally {
+    busy.value = false
+  }
+}
+
 async function revoke(deviceId: string, label: string) {
   if (!window.confirm(`Revoke ${label}? Offline sync from that device will stop.`)) return
   try {
@@ -726,17 +821,46 @@ onMounted(async () => {
           </div>
           <div v-if="!shops.length" class="empty-state">No shops in this group yet.</div>
           <div v-else class="simple-list">
-            <button
+            <div
               v-for="shop in shops"
               :key="shop.id"
-              type="button"
               class="simple-row selectable"
-              :class="{ selected: shop.id === selectedShopId }"
+              :class="{ selected: shop.id === selectedShopId, archived: shop.active === false }"
               @click="selectedShopId = shop.id"
             >
-              <div><strong>{{ shop.name }}</strong><small>{{ shop.timezone }}</small></div>
-              <span class="status-badge neutral">{{ data.branches.filter((branch) => branch.shop_id === shop.id).length }} branches</span>
-            </button>
+              <template v-if="editingShopId === shop.id">
+                <input
+                  v-model="editShopNameValue"
+                  class="inline-edit-input"
+                  maxlength="120"
+                  @click.stop
+                  @keydown.enter.prevent="saveEditShop(shop.id)"
+                  @keydown.esc.prevent="cancelEditShop"
+                />
+                <div class="row-actions" @click.stop>
+                  <button type="button" class="mini-button" :disabled="busy" @click="saveEditShop(shop.id)">Save</button>
+                  <button type="button" class="mini-button" @click="cancelEditShop">Cancel</button>
+                </div>
+              </template>
+              <template v-else>
+                <div>
+                  <strong>{{ shop.name }}</strong>
+                  <small>{{ shop.timezone }}</small>
+                </div>
+                <div class="row-actions" @click.stop>
+                  <span v-if="shop.active === false" class="status-badge rejected">Archived</span>
+                  <span v-else class="status-badge neutral">{{ data.branches.filter((b) => b.shop_id === shop.id).length }} branches</span>
+                  <button type="button" class="mini-button" @click="startEditShop(shop.id, shop.name)">Rename</button>
+                  <button
+                    type="button"
+                    class="mini-button"
+                    :class="shop.active === false ? '' : 'reject'"
+                    :disabled="busy"
+                    @click="toggleShopActive(shop.id, shop.active !== false)"
+                  >{{ shop.active === false ? 'Restore' : 'Archive' }}</button>
+                </div>
+              </template>
+            </div>
           </div>
         </article>
 
@@ -747,9 +871,41 @@ onMounted(async () => {
           </div>
           <div v-if="!shopBranches.length" class="empty-state">No branches yet.</div>
           <div v-else class="simple-list">
-            <div v-for="branch in shopBranches" :key="branch.id" class="simple-row">
-              <div><strong>{{ branch.name }}</strong><small>{{ branch.id === auth.activeBranchId ? 'Currently selected branch' : 'Branch' }}</small></div>
-              <button type="button" class="mini-button" @click="auth.setBranch(branch.id)">Use</button>
+            <div v-for="branch in shopBranches" :key="branch.id" class="simple-row" :class="{ archived: branch.active === false }">
+              <template v-if="editingBranchId === branch.id">
+                <input
+                  v-model="editBranchNameValue"
+                  class="inline-edit-input"
+                  maxlength="120"
+                  @keydown.enter.prevent="saveEditBranch(branch.id)"
+                  @keydown.esc.prevent="cancelEditBranch"
+                />
+                <div class="row-actions">
+                  <button type="button" class="mini-button" :disabled="busy" @click="saveEditBranch(branch.id)">Save</button>
+                  <button type="button" class="mini-button" @click="cancelEditBranch">Cancel</button>
+                </div>
+              </template>
+              <template v-else>
+                <div>
+                  <strong>{{ branch.name }}</strong>
+                  <small>
+                    <span v-if="branch.active === false" class="status-badge rejected" style="font-size:10px">Archived</span>
+                    <span v-else-if="branch.id === auth.activeBranchId">Currently selected</span>
+                    <span v-else>Branch</span>
+                  </small>
+                </div>
+                <div class="row-actions">
+                  <button v-if="branch.active !== false" type="button" class="mini-button" @click="auth.setBranch(branch.id)">Use</button>
+                  <button type="button" class="mini-button" @click="startEditBranch(branch.id, branch.name)">Rename</button>
+                  <button
+                    type="button"
+                    class="mini-button"
+                    :class="branch.active === false ? '' : 'reject'"
+                    :disabled="busy"
+                    @click="toggleBranchActive(branch.id, branch.active !== false)"
+                  >{{ branch.active === false ? 'Restore' : 'Archive' }}</button>
+                </div>
+              </template>
             </div>
           </div>
         </article>

@@ -528,8 +528,8 @@ export function updateShopSettings(input: {
 }
 
 export function updateShopName(input: {
-  shopId: string, 
-  name: string, 
+  shopId: string
+  name: string
   version: number | null
 }): Promise<void> {
   return rpc<void>('update_shop_name', {
@@ -537,4 +537,16 @@ export function updateShopName(input: {
     p_name: input.name,
     p_version: input.version,
   })
+}
+
+export function updateBranchName(branchId: string, name: string): Promise<void> {
+  return rpc<void>('update_branch_name', { p_branch_id: branchId, p_name: name })
+}
+
+export function setShopActive(shopId: string, active: boolean): Promise<void> {
+  return rpc<void>('set_shop_active', { p_shop_id: shopId, p_active: active })
+}
+
+export function setBranchActive(branchId: string, active: boolean): Promise<void> {
+  return rpc<void>('set_branch_active', { p_branch_id: branchId, p_active: active })
 }
