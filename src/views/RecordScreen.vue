@@ -8,6 +8,7 @@ import { formatDateTime } from '../lib/datetime'
 import {
   recordRestock,
   recordExpense,
+  recordInventoryAdjustment,
   postProductionBatch,
   openShift,
   closeShift,
@@ -22,7 +23,7 @@ const ui = useUiStore()
 
 // ── Tabs ──
 
-type Tab = 'stock' | 'restock' | 'expense' | 'produce' | 'cash'
+type Tab = 'stock' | 'restock' | 'expense' | 'produce' | 'cash' | 'adjustment'
 const activeTab = ref<Tab>('stock')
 
 // ── Helpers ──
@@ -146,6 +147,8 @@ async function submitRestock() {
       note: restockNote.value.trim(),
       items,
       deliveryFee: parsePesoInput(restockDeliveryFee.value) || undefined,
+      paidFromCash: !!openShiftData.value,
+      shiftId: openShiftData.value?.id ?? null,
     })
     ui.success('Restock recorded')
     restockLines.value = [{ ingredientId: '', quantity: '', totalCost: '', unitCost: '' }]
@@ -188,8 +191,9 @@ async function submitExpense() {
       category: expenseCategory.value.trim(),
       description: expenseDescription.value.trim(),
       amountCentavos,
-      paidFromCash: false,
+      paidFromCash: !!openShiftData.value,
       cashMovementId: null,
+      shiftId: openShiftData.value?.id ?? null,
       spentAt: new Date(expenseDate.value).toISOString(),
       deliveryFee: parsePesoInput(expenseDeliveryFee.value) || undefined,
     })
@@ -219,6 +223,44 @@ const prodWaste = ref('')
 const prodWasteReason = ref('')
 const prodBusy = ref(false)
 const prodError = ref('')
+
+// ── Adjustment form ──
+
+const adjIngredientId = ref('')
+const adjActualQuantity = ref('')
+const adjReason = ref('')
+const adjBusy = ref(false)
+const adjError = ref('')
+
+async function submitAdjustment() {
+  adjError.value = ''
+  const branchId = auth.activeBranchId
+  if (!branchId) { adjError.value = 'No active branch'; return }
+  if (!adjIngredientId.value) { adjError.value = 'Select an ingredient.'; return }
+
+  const actualQuantity = Number(adjActualQuantity.value) || 0
+  if (actualQuantity < 0) { adjError.value = 'Quantity must be 0 or greater.'; return }
+  if (!adjReason.value.trim()) { adjError.value = 'Reason is required.'; return }
+
+  adjBusy.value = true
+  try {
+    await recordInventoryAdjustment({
+      branchId,
+      ingredientId: adjIngredientId.value,
+      actualQuantity,
+      reason: adjReason.value.trim(),
+    })
+    ui.success('Inventory adjusted')
+    adjIngredientId.value = ''
+    adjActualQuantity.value = ''
+    adjReason.value = ''
+    await loadData()
+  } catch (e: any) {
+    adjError.value = e?.message ?? 'Failed to adjust inventory'
+  } finally {
+    adjBusy.value = false
+  }
+}
 
 const selectedProduct = computed(() =>
   batchProducts.value.find((p) => p.id === prodProductId.value) ?? null,
@@ -327,6 +369,7 @@ async function submitCloseShift() {
       <button :class="{ active: activeTab === 'expense' }" @click="activeTab = 'expense'">Expense</button>
       <button :class="{ active: activeTab === 'produce' }" @click="activeTab = 'produce'">Produce</button>
       <button :class="{ active: activeTab === 'cash' }" @click="activeTab = 'cash'">Cash</button>
+      <button :class="{ active: activeTab === 'adjustment' }" @click="activeTab = 'adjustment'">Adjustment</button>
     </div>
 
     <!-- ── STOCK TAB ── -->
@@ -566,6 +609,37 @@ async function submitCloseShift() {
         <div class="dialog-actions">
           <button class="primary" :disabled="prodBusy" @click="submitProduction">
             {{ prodBusy ? 'Saving…' : 'Record Batch' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ADJUSTMENT TAB ── -->
+    <div v-if="activeTab === 'adjustment'" class="panel">
+      <div class="panel-title"><h2>Adjust Inventory</h2></div>
+
+      <div class="form-stack">
+        <label>
+          <span>Ingredient</span>
+          <select v-model="adjIngredientId">
+            <option value="" disabled>Select ingredient</option>
+            <option v-for="ing in inventory?.ingredients ?? []" :key="ing.id" :value="ing.id">{{ ing.name }} ({{ ing.base_unit }})</option>
+          </select>
+        </label>
+        <label>
+          <span>Actual counted quantity</span>
+          <input v-model="adjActualQuantity" type="number" min="0" step="any" placeholder="0" />
+        </label>
+        <label>
+          <span>Reason</span>
+          <input v-model="adjReason" type="text" placeholder="e.g. spoilage, damage, count correction" />
+        </label>
+
+        <p v-if="adjError" class="form-error">{{ adjError }}</p>
+
+        <div class="dialog-actions">
+          <button class="primary" :disabled="adjBusy" @click="submitAdjustment">
+            {{ adjBusy ? 'Saving…' : 'Set Quantity' }}
           </button>
         </div>
       </div>

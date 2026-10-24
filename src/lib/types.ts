@@ -87,6 +87,13 @@ export interface PaymentMethod {
   updated_at?: string
 }
 
+export interface OptionRecipe {
+  ingredient_id: string
+  quantity: number
+  name: string
+  base_unit: string
+}
+
 export interface ProductOption {
   id: string
   name: string
@@ -94,6 +101,18 @@ export interface ProductOption {
   cost_centavos: number
   active?: boolean
   version?: number
+  recipes?: OptionRecipe[]
+}
+
+export interface ShopFlavor {
+  id: string
+  shop_id: string
+  name: string
+  active: boolean
+  sort_order: number
+  version: number
+  recipes?: Array<{ ingredient_id: string; ingredient_name: string; base_unit: string; quantity: number }>
+  linked_product_ids?: string[]
 }
 
 export interface CatalogProduct {
@@ -509,7 +528,7 @@ export interface AdminData {
     rice_included: boolean
     active: boolean
     version: number
-    options: Array<{ id: string; name: string; active: boolean; sort_order: number; version: number }>
+    options: Array<{ id: string; name: string; active: boolean; sort_order: number; version: number; recipes: Array<{ ingredient_id: string; quantity: number; name: string; base_unit: string }> }>
     recipe: Array<{ ingredient_id: string; quantity: number; name: string; base_unit: string }>
   }>
   ingredients: Ingredient[]

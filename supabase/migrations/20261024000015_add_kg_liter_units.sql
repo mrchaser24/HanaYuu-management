@@ -6,6 +6,7 @@ alter table public.ingredients add constraint ingredients_base_unit_check
   check (base_unit in ('g', 'kg', 'ml', 'L', 'piece'));
 
 -- 2. Update the upsert_ingredient RPC validation.
+drop function if exists public.upsert_ingredient(uuid, uuid, text, text, numeric, text, boolean, integer);
 create or replace function public.upsert_ingredient(
   p_shop_id uuid,
   p_ingredient_id uuid default null,

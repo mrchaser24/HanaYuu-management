@@ -53,7 +53,7 @@ begin
     if not found then raise exception 'Product is unavailable'; end if;
 
     select count(*) into v_option_count from jsonb_array_elements(coalesce(v_item->'selected_options', '[]'::jsonb));
-    if v_option_count <> v_product.flavor_choices then raise exception 'Incorrect number of selected options for %', v_product.name; end if;
+    if v_option_count <> v_product.flavor_choices * v_qty then raise exception 'Select % option(s) for %', v_product.flavor_choices * v_qty, v_product.name; end if;
 
     v_cost := 0;
     if v_product.stock_model = 'made_to_order' then

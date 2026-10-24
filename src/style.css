@@ -570,3 +570,15 @@ input[type="checkbox"] { width: auto; min-height: 0; accent-color: var(--green);
 .inline-edit-input:focus { outline: 3px solid #1b8d6740; outline-offset: 1px; }
 .simple-row.archived { opacity: 0.55; }
 .simple-row.archived strong { text-decoration: line-through; }
+
+/* Flavor link grid */
+.flavor-link-grid { display: grid; gap: 12px; }
+.flavor-link-row { padding: 10px 0; border-top: 1px solid var(--line); }
+.flavor-link-row:first-child { border-top: 0; }
+.flavor-link-row strong { display: block; margin-bottom: 6px; font-size: 13px; }
+.flavor-link-row small { color: var(--muted); font-weight: 400; }
+.flavor-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.check-row.compact { font-size: 12px; gap: 5px; }
+.check-row.compact input[type="checkbox"] { width: 16px; height: 16px; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+.inline-form input { flex: 1; min-width: 140px; }

@@ -342,6 +342,7 @@ begin
 end;
 $$;
 
+drop function if exists public.upsert_ingredient(uuid, uuid, text, text, numeric, text, boolean, integer);
 create or replace function public.upsert_ingredient(
   p_shop_id uuid,
   p_ingredient_id uuid,
@@ -643,8 +644,13 @@ begin
         'expected_yield_quantity', p.expected_yield_quantity, 'expected_yield_unit', p.expected_yield_unit,
         'pieces', p.pieces, 'rice_included', p.rice_included, 'active', p.active, 'version', p.version,
         'options', coalesce((
-          select jsonb_agg(jsonb_build_object('id', o.id, 'name', o.name, 'active', o.active, 'sort_order', o.sort_order, 'version', o.version)
-            order by o.sort_order, o.name)
+          select jsonb_agg(jsonb_build_object(
+            'id', o.id, 'name', o.name, 'active', o.active, 'sort_order', o.sort_order, 'version', o.version,
+            'recipes', coalesce((
+              select jsonb_agg(jsonb_build_object('ingredient_id', r.ingredient_id, 'quantity', r.quantity, 'name', i.name, 'base_unit', i.base_unit))
+              from public.product_option_recipes r join public.ingredients i on i.id = r.ingredient_id where r.option_id = o.id
+            ), '[]'::jsonb)
+          ) order by o.sort_order, o.name)
           from public.product_options o where o.product_id = p.id
         ), '[]'::jsonb),
         'recipe', coalesce((

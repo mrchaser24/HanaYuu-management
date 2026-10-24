@@ -187,6 +187,20 @@ export function postProductionBatch(input: {
   })
 }
 
+export function recordInventoryAdjustment(input: {
+  branchId: string
+  ingredientId: string
+  actualQuantity: number
+  reason: string
+}): Promise<string> {
+  return rpc<string>('record_inventory_adjustment', {
+    p_branch_id: input.branchId,
+    p_ingredient_id: input.ingredientId,
+    p_actual_quantity: input.actualQuantity,
+    p_reason: input.reason,
+  })
+}
+
 export function getCashShifts(branchId: string, limit = 50): Promise<CashShift[]> {
   return rpc<CashShift[]>('get_cash_shifts', { p_branch_id: branchId, p_limit: limit })
 }
@@ -427,6 +441,13 @@ export function upsertProductOption(input: {
   })
 }
 
+export function deleteProductOption(productId: string, optionId: string): Promise<void> {
+  return rpc<void>('delete_product_option', {
+    p_product_id: productId,
+    p_option_id: optionId,
+  })
+}
+
 export function setBranchProductAvailability(
   branchId: string,
   productId: string,
@@ -549,4 +570,36 @@ export function setShopActive(shopId: string, active: boolean): Promise<void> {
 
 export function setBranchActive(branchId: string, active: boolean): Promise<void> {
   return rpc<void>('set_branch_active', { p_branch_id: branchId, p_active: active })
+}
+
+// ── Shop flavors (global per shop) ──
+
+export function upsertShopFlavor(input: {
+  shopId: string
+  flavorId: string | null
+  name: string
+  active: boolean
+  sortOrder: number
+  version: number | null
+}): Promise<string> {
+  return rpc<string>('upsert_shop_flavor', {
+    p_shop_id: input.shopId,
+    p_flavor_id: input.flavorId,
+    p_name: input.name,
+    p_active: input.active,
+    p_sort_order: input.sortOrder,
+    p_version: input.version,
+  })
+}
+
+export function setProductFlavorLink(productId: string, flavorId: string, linked: boolean): Promise<void> {
+  return rpc<void>('set_product_flavor_link', { p_product_id: productId, p_flavor_id: flavorId, p_linked: linked })
+}
+
+export function upsertShopFlavorRecipe(flavorId: string, ingredientId: string, quantity: number): Promise<string> {
+  return rpc<string>('upsert_shop_flavor_recipe', { p_flavor_id: flavorId, p_ingredient_id: ingredientId, p_quantity: quantity })
+}
+
+export function deleteShopFlavorRecipe(flavorId: string, ingredientId: string): Promise<void> {
+  return rpc<void>('delete_shop_flavor_recipe', { p_flavor_id: flavorId, p_ingredient_id: ingredientId })
 }
