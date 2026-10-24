@@ -63,6 +63,66 @@ describe('cart rules', () => {
     expect(cart.payload()[0]?.selected_options).toEqual([{ id: option.id, name: option.name }])
   })
 
+  it('requires quantity * flavor_choices for multi-quantity lines', () => {
+    const cart = useCartStore()
+    const wings = product({ flavor_choices: 2, options: [option] })
+    cart.addProduct(wings)
+    cart.setQuantity(wings.id, 2)
+    expect(cart.ready).toBe(false)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    expect(cart.ready).toBe(false)
+    const option2: ProductOption = { ...option, id: 'option-2', name: 'BBQ' }
+    cart.toggleOption(wings.id, option2)
+    cart.toggleOption(wings.id, option2)
+    expect(cart.ready).toBe(true)
+    expect(cart.invalidLines).toHaveLength(0)
+  })
+
+  it('allows selecting the same flavor multiple times', () => {
+    const cart = useCartStore()
+    const wings = product({ flavor_choices: 2, options: [option] })
+    cart.addProduct(wings)
+    cart.setQuantity(wings.id, 2)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    expect(cart.ready).toBe(true)
+    const payload = cart.payload()[0]?.selected_options ?? []
+    expect(payload).toHaveLength(4)
+    expect(payload.filter((o) => o.id === option.id)).toHaveLength(4)
+  })
+
+  it('cannot add more flavors once the cap is reached', () => {
+    const cart = useCartStore()
+    const wings = product({ flavor_choices: 2, options: [option] })
+    cart.addProduct(wings)
+    cart.setQuantity(wings.id, 2)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    expect(cart.ready).toBe(true)
+    cart.toggleOption(wings.id, option)
+    expect(cart.lines[0]?.options).toHaveLength(4)
+  })
+
+  it('reducing quantity trims excess flavor selections', () => {
+    const cart = useCartStore()
+    const wings = product({ flavor_choices: 2, options: [option] })
+    cart.addProduct(wings)
+    cart.setQuantity(wings.id, 2)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    cart.toggleOption(wings.id, option)
+    expect(cart.ready).toBe(true)
+    cart.setQuantity(wings.id, 1)
+    expect(cart.ready).toBe(true)
+    expect(cart.lines[0]?.options).toHaveLength(2)
+  })
+
   it('clamps discounts and requires a reason', () => {
     const cart = useCartStore()
     cart.addProduct(product())

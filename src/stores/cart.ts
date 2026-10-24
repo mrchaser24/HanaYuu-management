@@ -22,7 +22,7 @@ export const useCartStore = defineStore('cart', () => {
   const cartCount = computed(() => lines.value.reduce((sum, line) => sum + line.quantity, 0))
   const isEmpty = computed(() => lines.value.length === 0)
   const invalidLines = computed(() =>
-    lines.value.filter((line) => line.options.length !== line.product.flavor_choices),
+    lines.value.filter((line) => line.options.length !== line.quantity * line.product.flavor_choices),
   )
   const ready = computed(
     () =>
@@ -54,6 +54,10 @@ export const useCartStore = defineStore('cart', () => {
       return
     }
     line.quantity = Math.min(Math.round(quantity), 999)
+    const required = line.quantity * line.product.flavor_choices
+    if (line.options.length > required) {
+      line.options = line.options.slice(0, required)
+    }
   }
 
   function removeLine(productId: string) {
@@ -63,19 +67,15 @@ export const useCartStore = defineStore('cart', () => {
   function toggleOption(productId: string, option: ProductOption) {
     const line = lines.value.find((item) => item.product.id === productId)
     if (!line) return
-    const index = line.options.findIndex((item) => item.id === option.id)
-    if (index >= 0) {
-      line.options.splice(index, 1)
-      return
-    }
-    if (line.options.length >= line.product.flavor_choices) return
+    const maxOptions = line.quantity * line.product.flavor_choices
+    if (line.options.length >= maxOptions) return
     line.options.push(option)
   }
 
   function setLineOptions(productId: string, options: ProductOption[]) {
     const line = lines.value.find((item) => item.product.id === productId)
     if (!line) return
-    line.options = options.slice(0, line.product.flavor_choices)
+    line.options = options.slice(0, line.quantity * line.product.flavor_choices)
   }
 
   function setDiscount(centavos: number, reason: string) {
@@ -114,6 +114,10 @@ export const useCartStore = defineStore('cart', () => {
     const line = lines.value.find((item) => item.product.id === productId)
     if (!line) return
     line.product = product
+    const required = line.quantity * product.flavor_choices
+    if (line.options.length > required) {
+      line.options = line.options.slice(0, required)
+    }
   }
 
   return {

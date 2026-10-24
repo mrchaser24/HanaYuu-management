@@ -88,7 +88,7 @@ const entries = computed<TimelineEntry[]>(() => {
       id: p.id,
       type: 'restock',
       label: p.description || p.supplier_category || 'Restock',
-      amount: -p.total_deducted_centavos,
+      amount: -(p.total_deducted_centavos || 0),
       date: p.purchase_date,
     })
   }
@@ -98,7 +98,7 @@ const entries = computed<TimelineEntry[]>(() => {
       id: e.id,
       type: 'expense',
       label: e.description || e.category,
-      amount: -(e.amount_centavos + e.delivery_fee_centavos),
+      amount: -((e.amount_centavos || 0) + (e.delivery_fee_centavos || 0)),
       date: e.spent_at,
     })
   }
@@ -108,7 +108,7 @@ const entries = computed<TimelineEntry[]>(() => {
       id: c.id,
       type: 'correction',
       label: `${c.kind === 'void' ? 'Void' : 'Refund'}: ${c.reason}`,
-      amount: -(c.refund_amount_centavos ?? c.order_total_centavos),
+      amount: -((c.refund_amount_centavos ?? c.order_total_centavos) || 0),
       method: c.refund_method ?? undefined,
       date: c.created_at,
       status: c.status,

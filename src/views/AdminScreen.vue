@@ -97,7 +97,7 @@ const optionRecipeBusy = ref(false)
 const editingIngredientId = ref<string | null>(null)
 const ingredientForm = ref({
   name: '',
-  baseUnit: 'g' as 'g' | 'ml' | 'piece',
+  baseUnit: 'g' as 'g' | 'kg' | 'ml' | 'L' | 'piece',
   lowStock: '0',
   category: 'other',
   active: true,
@@ -1258,7 +1258,7 @@ onMounted(async () => {
         <div class="three-column">
           <label>
             <span>Base unit</span>
-            <select v-model="ingredientForm.baseUnit"><option value="g">g</option><option value="ml">ml</option><option value="piece">piece</option></select>
+            <select v-model="ingredientForm.baseUnit"><option value="g">g (grams)</option><option value="kg">kg (kilograms)</option><option value="ml">ml (milliliters)</option><option value="L">L (liters)</option><option value="piece">piece</option></select>
           </label>
           <label><span>Low stock at</span><input v-model="ingredientForm.lowStock" inputmode="decimal" /></label>
           <label><span>Category</span><input v-model="ingredientForm.category" maxlength="60" /></label>

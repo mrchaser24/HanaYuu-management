@@ -445,7 +445,7 @@ export function upsertIngredient(input: {
   shopId: string
   ingredientId: string | null
   name: string
-  baseUnit: 'g' | 'ml' | 'piece'
+  baseUnit: 'g' | 'kg' | 'ml' | 'L' | 'piece'
   lowStockQuantity: number
   category: string
   active: boolean

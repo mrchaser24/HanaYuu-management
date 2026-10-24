@@ -266,7 +266,7 @@ export interface Ingredient {
   id: string
   shop_id: string
   name: string
-  base_unit: 'g' | 'ml' | 'piece'
+  base_unit: 'g' | 'kg' | 'ml' | 'L' | 'piece'
   category: string
   low_stock_quantity: number
   active: boolean

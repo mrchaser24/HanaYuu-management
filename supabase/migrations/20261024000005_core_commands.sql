@@ -175,8 +175,8 @@ begin
     if not v_orderable then raise exception 'Product is unavailable at this branch'; end if;
 
     v_option_count := jsonb_array_length(coalesce(v_item->'selected_options', '[]'::jsonb));
-    if v_option_count <> v_product.flavor_choices then
-      raise exception 'Select % option(s) for %', v_product.flavor_choices, v_product.name;
+    if v_option_count <> v_product.flavor_choices * v_qty then
+      raise exception 'Select % option(s) for %', v_product.flavor_choices * v_qty, v_product.name;
     end if;
 
     insert into public.order_lines (

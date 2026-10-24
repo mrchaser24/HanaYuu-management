@@ -289,7 +289,7 @@ watch(() => auth.activeBranchId, () => void load())
           <small>{{ product.description || 'No description yet' }}</small>
           <b>{{ formatPeso(product.price_centavos) }}</b>
           <div class="product-meta">
-            <em v-if="product.flavor_choices">{{ product.flavor_choices }} flavor{{ product.flavor_choices > 1 ? 's' : '' }}</em>
+            <em v-if="product.flavor_choices">{{ product.flavor_choices }} flavor{{ product.flavor_choices > 1 ? 's' : '' }} per item</em>
             <em v-else>No options</em>
             <em v-if="product.stock_model === 'batch_produced'">{{ product.stock_quantity ?? 0 }} left</em>
             <em v-else-if="!product.recipe_complete" class="estimate">Estimate cost</em>
@@ -330,8 +330,8 @@ watch(() => auth.activeBranchId, () => void load())
               <b>{{ line.quantity }}</b>
               <button type="button" @click="cart.setQuantity(line.product.id, line.quantity + 1)">+</button>
             </div>
-            <small :class="{ invalid: line.options.length !== line.product.flavor_choices }">
-              {{ line.options.length }}/{{ line.product.flavor_choices }} selected
+            <small :class="{ invalid: line.options.length !== line.quantity * line.product.flavor_choices }">
+              {{ line.options.length }}/{{ line.quantity * line.product.flavor_choices }} selected
             </small>
           </div>
           <div v-if="line.product.options.length" class="flavors">
@@ -340,10 +340,7 @@ watch(() => auth.activeBranchId, () => void load())
               :key="option.id"
               type="button"
               :class="{ selected: line.options.some((selected) => selected.id === option.id) }"
-              :disabled="
-                !line.options.some((selected) => selected.id === option.id) &&
-                line.options.length >= line.product.flavor_choices
-              "
+              :disabled="line.options.length >= line.quantity * line.product.flavor_choices"
               @click="cart.toggleOption(line.product.id, option)"
             >
               {{ option.name }}
@@ -403,7 +400,7 @@ watch(() => auth.activeBranchId, () => void load())
           <input v-model="reference" placeholder="Reference number" maxlength="80" />
         </label>
         <p v-if="cart.invalidLines.length" class="form-note">
-          Select {{ cart.invalidLines[0]?.product.flavor_choices }} flavor(s) for {{ cart.invalidLines[0]?.product.name }}.
+          Select {{ cart.invalidLines[0]?.quantity * cart.invalidLines[0]?.product.flavor_choices }} flavor(s) for {{ cart.invalidLines[0]?.product.name }}.
         </p>
         <p v-if="cart.discountInvalid" class="form-note">Add a reason and keep the discount within the subtotal.</p>
         <p v-if="isCash && cart.lines.length && tenderedCentavos < cart.totalCentavos" class="form-note">
