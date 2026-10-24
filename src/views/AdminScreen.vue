@@ -27,6 +27,7 @@ import {
   setBranchActive,
   upsertShopFlavor,
   setProductFlavorLink,
+  sendPasswordRecovery,
 } from '../lib/api'
 import { formatDateTime, formatQuantity } from '../lib/datetime'
 import { supabase } from '../lib/supabase'
@@ -419,6 +420,17 @@ async function removeMember(memberId: string, name: string) {
     ui.success('Team member removed')
   } catch (removeError) {
     ui.error('Could not remove member', removeError instanceof Error ? removeError.message : String(removeError))
+  }
+}
+
+async function resetMemberPassword(email: string | null, name: string | null) {
+  if (!email) return
+  if (!window.confirm(`Send a password recovery email to ${name ?? email}?`)) return
+  try {
+    await sendPasswordRecovery(email)
+    ui.success('Recovery email sent', `${email} will receive a password reset link.`)
+  } catch (e: unknown) {
+    ui.error('Could not send recovery email', e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -1086,12 +1098,13 @@ onMounted(async () => {
           <div class="data-table six-col">
             <div class="table-head"><span>Person</span><span>Role</span><span>Shop</span><span>Branch</span><span>Added</span><span></span></div>
             <div v-for="member in shopMembers" :key="member.id" class="table-row static">
-              <span><b>{{ member.display_name ?? 'Unnamed' }}</b><small>{{ member.user_id.slice(0, 8) }}</small></span>
+              <span><b>{{ member.display_name ?? 'Unnamed' }}</b><small>{{ member.email ?? member.user_id.slice(0, 8) }}</small></span>
               <span><span class="status-badge neutral">{{ member.role.replace('_', ' ') }}</span></span>
               <span>{{ shopNameFor(member.shop_id) }}</span>
               <span>{{ branchNameFor(member.branch_id) }}</span>
               <span>{{ formatDateTime(member.created_at) }}</span>
-              <span>
+              <span class="row-actions">
+                <button v-if="member.email" type="button" class="mini-button" @click="resetMemberPassword(member.email, member.display_name)">Reset password</button>
                 <button type="button" class="mini-button reject" @click="removeMember(member.id, member.display_name ?? 'this person')">Remove</button>
               </span>
             </div>

@@ -56,6 +56,16 @@ export async function ensureProfile(displayName: string): Promise<Profile> {
   return data as Profile
 }
 
+export function updateProfile(displayName: string): Promise<void> {
+  return rpc<void>('update_profile', { p_display_name: displayName })
+}
+
+export async function sendPasswordRecovery(email: string): Promise<void> {
+  if (!supabase) throw new ApiError('Supabase is not configured.')
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim())
+  if (error) throw new ApiError(error.message)
+}
+
 export function getMyContext(): Promise<ContextResponse> {
   return rpc<ContextResponse>('get_my_context')
 }

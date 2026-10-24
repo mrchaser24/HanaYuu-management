@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import VaultDialog from '../components/VaultDialog.vue'
-import { getReports } from '../lib/api'
+import { getReports, updateProfile } from '../lib/api'
 import { daysAgoManila, formatDate, manilaDate } from '../lib/datetime'
 import { formatPeso, formatPercentFromBasisPoints } from '../lib/money'
 import { useAuthStore } from '../stores/auth'
@@ -21,6 +21,29 @@ const router = useRouter()
 
 const activeTab = ref<SettingsTab>('account')
 const showVault = ref(false)
+const editingName = ref(false)
+const nameInput = ref('')
+const nameBusy = ref(false)
+
+function startEditName() {
+  nameInput.value = auth.displayName
+  editingName.value = true
+}
+
+async function saveName() {
+  if (!nameInput.value.trim() || nameInput.value.trim().length < 2) return
+  nameBusy.value = true
+  try {
+    await updateProfile(nameInput.value.trim())
+    await auth.refreshContext()
+    editingName.value = false
+    ui.success('Name updated')
+  } catch (e: unknown) {
+    ui.error('Could not update name', e instanceof Error ? e.message : String(e))
+  } finally {
+    nameBusy.value = false
+  }
+}
 const report = ref<ReportResponse | null>(null)
 const reportFrom = ref(daysAgoManila(29))
 const reportTo = ref(manilaDate())
@@ -88,7 +111,20 @@ watch(activeTab, (tab) => {
       <article class="panel">
         <div class="panel-title"><div><p class="eyebrow">Profile</p><h2>Your account</h2></div></div>
         <div class="key-values">
-          <div><span>Name</span><b>{{ auth.displayName }}</b></div>
+          <div>
+            <span>Name</span>
+            <template v-if="editingName">
+              <div style="display:flex;gap:6px;align-items:center">
+                <input v-model="nameInput" class="inline-edit-input" maxlength="100" @keydown.enter.prevent="saveName" @keydown.esc.prevent="editingName = false" />
+                <button type="button" class="mini-button" :disabled="nameBusy" @click="saveName">Save</button>
+                <button type="button" class="mini-button" @click="editingName = false">Cancel</button>
+              </div>
+            </template>
+            <template v-else>
+              <b>{{ auth.displayName }}</b>
+              <button type="button" class="mini-button" style="margin-left:8px" @click="startEditName">Edit</button>
+            </template>
+          </div>
           <div><span>Email</span><b>{{ auth.email }}</b></div>
           <div><span>Role</span><b>{{ auth.role?.replace('_', ' ') ?? 'No role' }}</b></div>
           <div><span>Shop</span><b>{{ auth.activeShop?.name ?? 'None' }}</b></div>

@@ -311,6 +311,21 @@ const closeResult = ref<{ expected_cash_centavos: number; counted_cash_centavos:
 const openShiftData = computed(() =>
   shifts.value.find((s) => s.status === 'open') ?? null,
 )
+const lastClosedShift = computed(() => {
+  const closed = shifts.value.filter((s) => s.status === 'closed' && s.counted_cash_centavos !== null)
+  return closed.length ? closed[0] : null
+})
+const cashOverview = computed(() => {
+  const current = openShiftData.value?.current_expected_cash_centavos ?? 0
+  const lastCounted = lastClosedShift.value?.counted_cash_centavos ?? 0
+  return { currentExpected: current, lastCounted, hasOpen: Boolean(openShiftData.value) }
+})
+
+function prefillFromLastShift() {
+  if (lastClosedShift.value?.counted_cash_centavos != null) {
+    openShiftAmount.value = String(lastClosedShift.value.counted_cash_centavos / 100)
+  }
+}
 
 async function submitOpenShift() {
   cashError.value = ''
@@ -649,6 +664,20 @@ async function submitCloseShift() {
     <div v-if="activeTab === 'cash'" class="panel">
       <div class="panel-title"><h2>Cash Shifts</h2></div>
 
+      <!-- Cash overview -->
+      <div class="metric-grid" style="margin-bottom:14px">
+        <article class="metric-card accent">
+          <span>{{ cashOverview.hasOpen ? 'Expected in drawer' : 'Last counted cash' }}</span>
+          <strong>{{ formatPeso(cashOverview.hasOpen ? cashOverview.currentExpected : cashOverview.lastCounted) }}</strong>
+          <small>{{ cashOverview.hasOpen ? 'Current open shift' : lastClosedShift ? 'From last closed shift' : 'No shifts yet' }}</small>
+        </article>
+        <article v-if="lastClosedShift && cashOverview.hasOpen" class="metric-card">
+          <span>Last closed counted</span>
+          <strong>{{ formatPeso(cashOverview.lastCounted) }}</strong>
+          <small>{{ formatDateTime(lastClosedShift.closed_at!) }}</small>
+        </article>
+      </div>
+
       <!-- Open shift info -->
       <div v-if="openShiftData" class="callout info" style="margin-bottom: 16px;">
         <strong>Open shift</strong><br />
@@ -666,6 +695,11 @@ async function submitCloseShift() {
             <span>Opening cash (₱)</span>
             <input v-model="openShiftAmount" type="text" inputmode="decimal" placeholder="0.00" />
           </label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button v-if="lastClosedShift" type="button" class="secondary small" @click="prefillFromLastShift">
+              Use last counted ({{ formatPeso(lastClosedShift.counted_cash_centavos ?? 0) }})
+            </button>
+          </div>
           <div class="dialog-actions">
             <button class="primary" :disabled="cashBusy" @click="submitOpenShift">
               {{ cashBusy ? 'Opening…' : 'Open Shift' }}

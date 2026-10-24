@@ -511,6 +511,7 @@ export interface AdminData {
     shop_id: string | null
     branch_id: string | null
     display_name: string | null
+    email: string | null
     created_at: string
   }>
   devices: Device[]
