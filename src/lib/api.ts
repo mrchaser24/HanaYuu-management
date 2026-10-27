@@ -401,6 +401,20 @@ export function removeMembership(membershipId: string): Promise<void> {
   return rpc<void>('remove_membership', { p_membership_id: membershipId })
 }
 
+export function updateMembership(input: {
+  membershipId: string
+  role: Role
+  shopId: string | null
+  branchId: string | null
+}): Promise<void> {
+  return rpc<void>('update_membership', {
+    p_membership_id: input.membershipId,
+    p_role: input.role,
+    p_shop_id: input.shopId,
+    p_branch_id: input.branchId,
+  })
+}
+
 export function upsertProduct(input: {
   shopId: string
   productId: string | null

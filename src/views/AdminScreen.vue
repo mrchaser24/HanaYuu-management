@@ -5,7 +5,6 @@ import {
   addMembership,
   createBranch,
   createShop,
-  deleteOptionRecipe,
   deleteRecipeComponent,
   getAdminData,
   getAuditEvents,
@@ -15,11 +14,8 @@ import {
   setBranchProductAvailability,
   updateShopSettings,
   upsertIngredient,
-  upsertOptionRecipe,
   upsertPaymentMethod,
   upsertProduct,
-  upsertProductOption,
-  deleteProductOption,
   upsertRecipeComponent,
   updateShopName,
   updateBranchName,
@@ -27,6 +23,9 @@ import {
   setBranchActive,
   upsertShopFlavor,
   setProductFlavorLink,
+  upsertShopFlavorRecipe,
+  deleteShopFlavorRecipe,
+  updateMembership,
   sendPasswordRecovery,
 } from '../lib/api'
 import { formatDateTime, formatQuantity } from '../lib/datetime'
@@ -76,6 +75,8 @@ const memberEmail = ref('')
 const memberRole = ref<Role>('staff')
 const memberShopId = ref('')
 const memberBranchId = ref('')
+const memberEditingId = ref<string | null>(null)
+const isEditingMember = computed(() => memberEditingId.value !== null)
 
 const editingProductId = ref<string | null>(null)
 const productForm = ref({
@@ -91,16 +92,8 @@ const productForm = ref({
   active: true,
   version: null as number | null,
 })
-const newOptionName = ref('')
 const recipeIngredientId = ref('')
 const recipeQuantity = ref('')
-const optionRecipeOptionId = ref<string | null>(null)
-const optionRecipeBusy = ref(false)
-
-const editingOptionName = ref('')
-const editingOptionId = ref<string | null>(null)
-const optionDeleteBusy = ref<string | null>(null)
-
 
 // Shop-level flavors
 const newShopFlavorName = ref('')
@@ -111,10 +104,37 @@ const editingShopFlavorName = ref('')
 interface ShopFlavorRow { id: string; name: string; active: boolean; sort_order: number; version: number }
 const shopFlavorsRaw = ref<ShopFlavorRow[]>([])
 const productFlavorLinksRaw = ref<Array<{ product_id: string; flavor_id: string }>>([])
+const shopFlavorRecipesRaw = ref<Array<{ flavor_id: string; ingredient_id: string; quantity: number }>>([])
+const selectedFlavorForRecipes = ref<string | null>(null)
+const newFlavorRecipeIngredientId = ref('')
+const newFlavorRecipeQuantity = ref('')
+const flavorRecipeBusy = ref(false)
 
 const shopFlavors = computed(() =>
   shopFlavorsRaw.value.filter(f => f).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
 )
+
+const selectedShopFlavor = computed(() =>
+  shopFlavors.value.find(f => f.id === selectedFlavorForRecipes.value) ?? null,
+)
+
+const selectedFlavorRecipeLines = computed(() =>
+  shopFlavorRecipesRaw.value
+    .filter(line => line.flavor_id === selectedFlavorForRecipes.value)
+    .map(line => {
+      const ingredient = shopIngredients.value.find(item => item.id === line.ingredient_id)
+      return {
+        ...line,
+        name: ingredient?.name ?? 'Unknown ingredient',
+        base_unit: ingredient?.base_unit ?? '',
+      }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name)),
+)
+
+function flavorRecipeCount(flavorId: string) {
+  return shopFlavorRecipesRaw.value.filter(line => line.flavor_id === flavorId).length
+}
 
 function flavorLinkedCount(flavorId: string) {
   return productFlavorLinksRaw.value.filter(l => l.flavor_id === flavorId).length
@@ -177,14 +197,6 @@ async function toggleFlavorLink(productId: string, flavorId: string, linked: boo
   finally { shopFlavorBusy.value = false }
 }
 
-const selectedOptionForRecipes = computed(() =>
-  editingProduct.value?.options.find((o) => o.id === optionRecipeOptionId.value) ?? null,
-)
-const newOptionRecipeIngredientId = ref('')
-const newOptionRecipeQuantity = ref('')
-
-const isEditingName = computed(() => editingOptionId.value !== null)
-
 const editingIngredientId = ref<string | null>(null)
 const ingredientForm = ref({
   name: '',
@@ -235,6 +247,13 @@ const memberBranchOptions = computed(() => {
 })
 const canAddOwner = computed(() => auth.isSuperAdmin)
 
+watch(memberShopId, () => {
+  if (memberRole.value !== 'staff') return
+  if (!memberBranchOptions.value.some((branch) => branch.id === memberBranchId.value)) {
+    memberBranchId.value = memberBranchOptions.value[0]?.id ?? ''
+  }
+})
+
 function shopNameFor(id: string | null) {
   return shops.value.find((shop) => shop.id === id)?.name ?? '—'
 }
@@ -265,14 +284,92 @@ async function load() {
 }
 
 async function loadShopFlavors() {
-  if (!supabase || !currentShop.value) { shopFlavorsRaw.value = []; productFlavorLinksRaw.value = []; return }
+  if (!supabase || !currentShop.value) {
+    shopFlavorsRaw.value = []
+    productFlavorLinksRaw.value = []
+    shopFlavorRecipesRaw.value = []
+    return
+  }
   const shopId = currentShop.value.id
-  const [flavorsRes, linksRes] = await Promise.all([
-    supabase.from('shop_flavors').select('id, name, active, sort_order, version').eq('shop_id', shopId).order('sort_order').order('name'),
-    supabase.from('product_flavor_links').select('product_id, flavor_id').in('product_id', shopProducts.value.map(p => p.id)),
-  ])
+  const flavorsRes = await supabase
+    .from('shop_flavors')
+    .select('id, name, active, sort_order, version')
+    .eq('shop_id', shopId)
+    .order('sort_order')
+    .order('name')
+  if (flavorsRes.error) throw flavorsRes.error
   shopFlavorsRaw.value = (flavorsRes.data ?? []) as ShopFlavorRow[]
+
+  const flavorIds = shopFlavorsRaw.value.map((flavor) => flavor.id)
+  const productIds = shopProducts.value.map((product) => product.id)
+  const [linksRes, recipesRes] = await Promise.all([
+    productIds.length && flavorIds.length
+      ? supabase
+          .from('product_flavor_links')
+          .select('product_id, flavor_id')
+          .in('product_id', productIds)
+          .in('flavor_id', flavorIds)
+      : Promise.resolve({ data: [], error: null }),
+    flavorIds.length
+      ? supabase
+          .from('shop_flavor_recipes')
+          .select('flavor_id, ingredient_id, quantity')
+          .in('flavor_id', flavorIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (linksRes.error) throw linksRes.error
+  if (recipesRes.error) throw recipesRes.error
   productFlavorLinksRaw.value = (linksRes.data ?? []) as Array<{ product_id: string; flavor_id: string }>
+  shopFlavorRecipesRaw.value = (recipesRes.data ?? []) as Array<{ flavor_id: string; ingredient_id: string; quantity: number }>
+}
+
+function openFlavorRecipes(flavorId: string) {
+  selectedFlavorForRecipes.value = flavorId
+  newFlavorRecipeIngredientId.value = shopIngredients.value[0]?.id ?? ''
+  newFlavorRecipeQuantity.value = ''
+}
+
+function closeFlavorRecipes() {
+  selectedFlavorForRecipes.value = null
+  newFlavorRecipeIngredientId.value = ''
+  newFlavorRecipeQuantity.value = ''
+}
+
+async function addFlavorRecipeLine() {
+  if (!selectedFlavorForRecipes.value || !newFlavorRecipeIngredientId.value) return
+  const quantity = Number(newFlavorRecipeQuantity.value)
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    ui.error('Enter a positive quantity for the ingredient')
+    return
+  }
+  flavorRecipeBusy.value = true
+  try {
+    await upsertShopFlavorRecipe(selectedFlavorForRecipes.value, newFlavorRecipeIngredientId.value, quantity)
+    const flavorId = selectedFlavorForRecipes.value
+    await load()
+    await refreshCatalog()
+    openFlavorRecipes(flavorId)
+    ui.success('Flavor ingredient saved')
+  } catch (recipeError) {
+    ui.error('Could not save flavor ingredient', recipeError instanceof Error ? recipeError.message : String(recipeError))
+  } finally {
+    flavorRecipeBusy.value = false
+  }
+}
+
+async function removeFlavorRecipeLine(flavorId: string, ingredientId: string) {
+  flavorRecipeBusy.value = true
+  try {
+    await deleteShopFlavorRecipe(flavorId, ingredientId)
+    await load()
+    await refreshCatalog()
+    openFlavorRecipes(flavorId)
+    ui.success('Flavor ingredient removed')
+  } catch (recipeError) {
+    ui.error('Could not remove flavor ingredient', recipeError instanceof Error ? recipeError.message : String(recipeError))
+  } finally {
+    flavorRecipeBusy.value = false
+  }
 }
 
 function syncSettingsForm() {
@@ -374,12 +471,28 @@ async function submitBranch() {
 }
 
 function startMember() {
+  memberEditingId.value = null
   memberEmail.value = ''
   memberRole.value = 'staff'
   memberShopId.value = currentShop.value?.id ?? ''
   memberBranchId.value = shopBranches.value[0]?.id ?? ''
   formError.value = null
   showMember.value = true
+}
+
+function startEditMember(member: AdminData['members'][number]) {
+  memberEditingId.value = member.id
+  memberEmail.value = member.email ?? ''
+  memberRole.value = member.role
+  memberShopId.value = member.shop_id ?? currentShop.value?.id ?? ''
+  memberBranchId.value = member.branch_id ?? ''
+  formError.value = null
+  showMember.value = true
+}
+
+function canEditMember(member: AdminData['members'][number]) {
+  if (member.role === 'super_admin') return false
+  return auth.isSuperAdmin || member.role === 'staff'
 }
 
 async function submitMember() {
@@ -395,16 +508,26 @@ async function submitMember() {
   }
   busy.value = true
   try {
-    await addMembership({
-      email: memberEmail.value,
-      role: memberRole.value,
-      groupId: auth.activeGroup.id,
-      shopId: memberRole.value === 'super_admin' ? null : memberShopId.value || currentShop.value?.id || null,
-      branchId: memberRole.value === 'staff' ? memberBranchId.value : null,
-    })
+    if (memberEditingId.value) {
+      await updateMembership({
+        membershipId: memberEditingId.value,
+        role: memberRole.value,
+        shopId: memberRole.value === 'super_admin' ? null : memberShopId.value || currentShop.value?.id || null,
+        branchId: memberRole.value === 'staff' ? memberBranchId.value : null,
+      })
+      ui.success('Team member updated')
+    } else {
+      await addMembership({
+        email: memberEmail.value,
+        role: memberRole.value,
+        groupId: auth.activeGroup.id,
+        shopId: memberRole.value === 'super_admin' ? null : memberShopId.value || currentShop.value?.id || null,
+        branchId: memberRole.value === 'staff' ? memberBranchId.value : null,
+      })
+      ui.success('Team member added')
+    }
     showMember.value = false
     await load()
-    ui.success('Team member added')
   } catch (submitError) {
     formError.value = submitError instanceof Error ? submitError.message : String(submitError)
   } finally {
@@ -450,7 +573,6 @@ function startProduct(productId?: string) {
     active: product?.active ?? true,
     version: product?.version ?? null,
   }
-  newOptionName.value = ''
   recipeIngredientId.value = shopIngredients.value[0]?.id ?? ''
   recipeQuantity.value = ''
   formError.value = null
@@ -488,47 +610,6 @@ async function submitProduct() {
   }
 }
 
-async function addOption() {
-  if (!editingProduct.value || newOptionName.value.trim().length < 1) return
-  try {
-    await upsertProductOption({
-      productId: editingProduct.value.id,
-      optionId: null,
-      name: newOptionName.value,
-      active: true,
-      sortOrder: editingProduct.value.options.length,
-      version: null,
-    })
-    const id = editingProduct.value.id
-    await load()
-    startProduct(id)
-    await refreshCatalog()
-    ui.success('Option added')
-  } catch (optionError) {
-    formError.value = optionError instanceof Error ? optionError.message : String(optionError)
-  }
-}
-
-async function toggleOption(optionId: string, active: boolean, version: number) {
-  if (!editingProduct.value) return
-  try {
-    await upsertProductOption({
-      productId: editingProduct.value.id,
-      optionId,
-      name: editingProduct.value.options.find((option) => option.id === optionId)?.name ?? '',
-      active: !active,
-      sortOrder: editingProduct.value.options.find((option) => option.id === optionId)?.sort_order ?? 0,
-      version,
-    })
-    const id = editingProduct.value.id
-    await load()
-    startProduct(id)
-    await refreshCatalog()
-  } catch (optionError) {
-    formError.value = optionError instanceof Error ? optionError.message : String(optionError)
-  }
-}
-
 async function addRecipe() {
   if (!editingProduct.value || !recipeIngredientId.value || Number(recipeQuantity.value) <= 0) return
   try {
@@ -553,119 +634,6 @@ async function removeRecipe(ingredientId: string) {
     await refreshCatalog()
   } catch (recipeError) {
     formError.value = recipeError instanceof Error ? recipeError.message : String(recipeError)
-  }
-}
-
-function isEditingOption(optionId: string) {
-  return editingOptionId.value === optionId
-}
-
-function isDeletingOption(optionId: string) {
-  return optionDeleteBusy.value === optionId
-}
-
-function editOptionName(optionId: string) {
-  const option = editingProduct.value?.options.find((o) => o.id === optionId)
-  if (!option) return
-  editingOptionId.value = optionId
-  editingOptionName.value = option.name
-}
-
-function cancelOptionName() {
-  editingOptionId.value = null
-  editingOptionName.value = ''
-}
-
-async function saveOptionName() {
-  if (!editingProduct.value || !editingOptionId.value || !editingOptionName.value.trim()) return
-  const option = editingProduct.value.options.find((o) => o.id === editingOptionId.value)
-  if (!option) return
-  try {
-    await upsertProductOption({
-      productId: editingProduct.value.id,
-      optionId: editingOptionId.value,
-      name: editingOptionName.value.trim(),
-      active: option.active,
-      sortOrder: option.sort_order,
-      version: option.version ?? null,
-    })
-    const id = editingProduct.value.id
-    await load()
-    startProduct(id)
-    await refreshCatalog()
-    cancelOptionName()
-    ui.success('Option name updated')
-  } catch (optionError) {
-    formError.value = optionError instanceof Error ? optionError.message : String(optionError)
-  }
-}
-
-function openOptionRecipes(optionId: string) {
-  if (editingOptionId.value !== null) return
-  optionRecipeOptionId.value = optionId
-  newOptionRecipeIngredientId.value = shopIngredients.value[0]?.id ?? ''
-  newOptionRecipeQuantity.value = ''
-}
-
-function closeOptionRecipes() {
-  optionRecipeOptionId.value = null
-  newOptionRecipeIngredientId.value = ''
-  newOptionRecipeQuantity.value = ''
-}
-
-async function addOptionRecipeLine() {
-  if (!selectedOptionForRecipes.value?.id || !newOptionRecipeIngredientId.value) return
-  const quantity = Number(newOptionRecipeQuantity.value)
-  if (!Number.isFinite(quantity) || quantity <= 0) {
-    ui.error('Enter a positive quantity for the ingredient')
-    return
-  }
-  optionRecipeBusy.value = true
-  try {
-    await upsertOptionRecipe(selectedOptionForRecipes.value.id, newOptionRecipeIngredientId.value, quantity)
-    await load()
-    startProduct(editingProduct.value!.id)
-    await refreshCatalog()
-    newOptionRecipeIngredientId.value = shopIngredients.value[0]?.id ?? ''
-    newOptionRecipeQuantity.value = ''
-    ui.success('Ingredient added')
-  } catch (recipeError) {
-    ui.error('Could not add ingredient', recipeError instanceof Error ? recipeError.message : String(recipeError))
-  } finally {
-    optionRecipeBusy.value = false
-  }
-}
-
-async function removeOptionRecipeLine(optionId: string, ingredientId: string) {
-  optionRecipeBusy.value = true
-  try {
-    await deleteOptionRecipe(optionId, ingredientId)
-    await load()
-    startProduct(editingProduct.value!.id)
-    await refreshCatalog()
-    ui.success('Ingredient removed')
-  } catch (recipeError) {
-    ui.error('Could not remove ingredient', recipeError instanceof Error ? recipeError.message : String(recipeError))
-  } finally {
-    optionRecipeBusy.value = false
-  }
-}
-
-async function deleteOption(optionId: string) {
-  if (!editingProduct.value) return
-  if (!confirm('Delete this option? This cannot be undone.')) return
-  optionDeleteBusy.value = optionId
-  try {
-    await deleteProductOption(editingProduct.value.id, optionId)
-    const id = editingProduct.value.id
-    await load()
-    startProduct(id)
-    await refreshCatalog()
-    ui.success('Option deleted')
-  } catch (optionError) {
-    formError.value = optionError instanceof Error ? optionError.message : String(optionError)
-  } finally {
-    optionDeleteBusy.value = null
   }
 }
 
@@ -1092,7 +1060,7 @@ onMounted(async () => {
           <div><p class="eyebrow">{{ currentShop?.name ?? 'Shop' }}</p><h2>Team access</h2></div>
           <button type="button" class="primary small" :disabled="!currentShop" @click="startMember">Add person</button>
         </div>
-        <div class="callout info">Owners manage staff for their shop. Super admins can add owners and other super admins.</div>
+        <div class="callout info">Super admins manage owners and staff across the group. Owners manage staff in their own shop only.</div>
         <div v-if="!shopMembers.length" class="empty-state">No team members besides your account.</div>
         <div v-else class="table-panel">
           <div class="data-table six-col">
@@ -1104,6 +1072,7 @@ onMounted(async () => {
               <span>{{ branchNameFor(member.branch_id) }}</span>
               <span>{{ formatDateTime(member.created_at) }}</span>
               <span class="row-actions">
+                <button v-if="canEditMember(member)" type="button" class="mini-button" @click="startEditMember(member)">Edit</button>
                 <button v-if="member.email" type="button" class="mini-button" @click="resetMemberPassword(member.email, member.display_name)">Reset password</button>
                 <button type="button" class="mini-button reject" @click="removeMember(member.id, member.display_name ?? 'this person')">Remove</button>
               </span>
@@ -1194,6 +1163,7 @@ onMounted(async () => {
                 <div><strong>{{ flavor.name }}</strong><small>{{ flavorLinkedCount(flavor.id) }} product{{ flavorLinkedCount(flavor.id) === 1 ? '' : 's' }}</small></div>
                 <div class="row-actions">
                   <span v-if="!flavor.active" class="status-badge rejected">Inactive</span>
+                  <button type="button" class="mini-button" @click="openFlavorRecipes(flavor.id)">Ingredients ({{ flavorRecipeCount(flavor.id) }})</button>
                   <button type="button" class="mini-button" @click="startEditShopFlavor(flavor.id, flavor.name)">Rename</button>
                   <button type="button" class="mini-button" :class="flavor.active ? 'reject' : ''" :disabled="shopFlavorBusy" @click="toggleShopFlavor(flavor.id, flavor.active, flavor.version)">{{ flavor.active ? 'Disable' : 'Enable' }}</button>
                 </div>
@@ -1337,6 +1307,44 @@ onMounted(async () => {
       </div>
     </template>
 
+    <AppModal
+      v-if="selectedShopFlavor"
+      title="Flavor ingredients"
+      :subtitle="`${selectedShopFlavor.name} · applies to every linked product`"
+      @close="closeFlavorRecipes"
+    >
+      <div class="form-stack">
+        <div v-if="!selectedFlavorRecipeLines.length" class="empty-state">No ingredients yet.</div>
+        <div v-else class="simple-list compact-list">
+          <div v-for="line in selectedFlavorRecipeLines" :key="line.ingredient_id" class="simple-row">
+            <div>
+              <strong>{{ line.name }}</strong>
+              <small>{{ formatQuantity(line.quantity, line.base_unit) }}</small>
+            </div>
+            <button
+              type="button"
+              class="mini-button reject"
+              :disabled="flavorRecipeBusy"
+              @click="removeFlavorRecipeLine(line.flavor_id, line.ingredient_id)"
+            >Remove</button>
+          </div>
+        </div>
+        <div class="two-column inline-form">
+          <select v-model="newFlavorRecipeIngredientId" :disabled="flavorRecipeBusy || !shopIngredients.length">
+            <option v-for="ingredient in shopIngredients" :key="ingredient.id" :value="ingredient.id">{{ ingredient.name }} · {{ ingredient.base_unit }}</option>
+          </select>
+          <input v-model="newFlavorRecipeQuantity" inputmode="decimal" placeholder="Quantity in base unit" :disabled="flavorRecipeBusy" />
+          <button type="button" class="secondary" :disabled="flavorRecipeBusy || !newFlavorRecipeIngredientId" @click="addFlavorRecipeLine">
+            {{ flavorRecipeBusy ? 'Saving…' : 'Add ingredient' }}
+          </button>
+        </div>
+        <p class="form-note">Ingredient changes update costs and stock deductions across all products linked to this flavor.</p>
+        <div class="dialog-actions">
+          <button type="button" class="primary" @click="closeFlavorRecipes">Done</button>
+        </div>
+      </div>
+    </AppModal>
+
     <AppModal v-if="showShop" title="Create a shop" subtitle="Shops hold branches, menu, and staff." @close="showShop = false">
       <form class="form-stack" @submit.prevent="submitShop">
         <label><span>Shop name</span><input v-model="newShopName" minlength="2" maxlength="120" required autofocus /></label>
@@ -1353,15 +1361,21 @@ onMounted(async () => {
       </form>
     </AppModal>
 
-    <AppModal v-if="showMember" title="Add a team member" subtitle="The email must already have a Benta sign-in account." @close="showMember = false">
+    <AppModal
+      v-if="showMember"
+      :title="isEditingMember ? 'Edit team member' : 'Add a team member'"
+      :subtitle="isEditingMember ? 'Update their role or assignment.' : 'The email must already have a Benta sign-in account.'"
+      @close="showMember = false"
+    >
       <form class="form-stack" @submit.prevent="submitMember">
-        <label><span>Email</span><input v-model="memberEmail" type="email" required autofocus /></label>
+        <label><span>Email</span><input v-model="memberEmail" type="email" required :disabled="isEditingMember" :autofocus="!isEditingMember" /></label>
+        <p v-if="isEditingMember" class="form-note">Email cannot be changed from this screen.</p>
         <label>
           <span>Role</span>
           <select v-model="memberRole">
             <option value="staff">Staff · branch only</option>
             <option v-if="canAddOwner" value="owner">Owner · whole shop</option>
-            <option v-if="canAddOwner" value="super_admin">Super admin · all shops</option>
+            <option v-if="canAddOwner && !isEditingMember" value="super_admin">Super admin · all shops</option>
           </select>
         </label>
         <template v-if="memberRole !== 'super_admin'">
@@ -1380,7 +1394,12 @@ onMounted(async () => {
         </label>
         <p v-if="memberRole === 'staff' && !memberBranchOptions.length" class="form-note">This shop has no branches. Create a branch first.</p>
         <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="dialog-actions"><button type="button" class="secondary" @click="showMember = false">Cancel</button><button type="submit" class="primary" :disabled="busy || (memberRole !== 'super_admin' && !memberShopId) || (memberRole === 'staff' && !memberBranchId)">{{ busy ? 'Adding…' : 'Add member' }}</button></div>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" @click="showMember = false">Cancel</button>
+          <button type="submit" class="primary" :disabled="busy || (memberRole !== 'super_admin' && !memberShopId) || (memberRole === 'staff' && !memberBranchId)">
+            {{ busy ? 'Saving…' : isEditingMember ? 'Save changes' : 'Add member' }}
+          </button>
+        </div>
       </form>
     </AppModal>
 
@@ -1420,31 +1439,12 @@ onMounted(async () => {
       <template v-if="editingProduct">
         <hr class="soft-divider" />
         <div class="editor-section">
-          <div class="panel-title"><div><p class="eyebrow">Flavors / options</p><h2>{{ editingProduct.options.length }} options</h2></div></div>
-          <div class="simple-list compact-list">
-            <div v-for="option in editingProduct.options" :key="option.id" class="simple-row flavor-row">
-              <div class="flavor-name">
-                <span v-if="!isEditingName || !isEditingOption(option.id)">
-                  <strong @click="editOptionName(option.id)">{{ option.name }}</strong>
-                  <small>{{ option.active ? 'Active' : 'Inactive' }} · {{ option.recipes?.length ?? 0 }} ingredient{{ option.recipes?.length === 1 ? '' : 's' }}</small>
-                </span>
-                <span v-else class="inline-edit">
-                  <input v-model="editingOptionName" maxlength="80" autofocus />
-                  <button type="button" class="mini-button" @click="saveOptionName">Save</button>
-                  <button type="button" class="mini-button reject" @click="cancelOptionName">Cancel</button>
-                </span>
-              </div>
-              <div class="flavor-actions">
-                <button type="button" class="mini-button" :disabled="isEditingName" @click="toggleOption(option.id, option.active, option.version)">{{ option.active ? 'Disable' : 'Enable' }}</button>
-                <button type="button" class="mini-button reject" :disabled="isEditingName || isDeletingOption(option.id)" @click="deleteOption(option.id)">{{ isDeletingOption(option.id) ? 'Deleting…' : 'Delete' }}</button>
-                <button type="button" class="mini-button" :disabled="isEditingName" @click="openOptionRecipes(option.id)">Edit ingredients</button>
-              </div>
-            </div>
+          <div class="panel-title"><div><p class="eyebrow">Flavors</p><h2>{{ editingProduct.options.length }} linked</h2></div></div>
+          <div v-if="!editingProduct.options.length" class="empty-state">No flavors linked. Use the Flavors tab to attach shop flavors.</div>
+          <div v-else class="chips">
+            <span v-for="option in editingProduct.options" :key="option.id">{{ option.name }}{{ option.active === false ? ' (inactive)' : '' }}</span>
           </div>
-          <div class="inline-form">
-            <input v-model="newOptionName" placeholder="New flavor name" maxlength="80" />
-            <button type="button" class="secondary" @click="addOption">Add flavor</button>
-          </div>
+          <p class="form-note">Flavors and their ingredients are managed once in the Flavors tab and shared across every linked product.</p>
         </div>
 
         <div class="editor-section">
@@ -1465,34 +1465,6 @@ onMounted(async () => {
           <p class="form-note">Recipe lines make stock deduction and profit exact for this product.</p>
         </div>
 
-        <div class="editor-section">
-          <div class="panel-title"><div><p class="eyebrow">Flavor ingredients</p><h2>{{ selectedOptionForRecipes?.name ?? 'Select a flavor' }}</h2></div></div>
-          <p class="form-note">Attach ingredient quantities to this flavor so costs and stock stay accurate per flavor variant.</p>
-          <div v-if="!selectedOptionForRecipes" class="simple-list compact-list">
-            <div v-for="option in editingProduct.options" :key="option.id" class="simple-row">
-              <div><strong>{{ option.name }}</strong><small>{{ option.recipes?.length ?? 0 }} ingredient{{ option.recipes?.length === 1 ? '' : 's' }}</small></div>
-              <button type="button" class="mini-button" :disabled="!shopIngredients.length || isEditingName" @click="openOptionRecipes(option.id)">Edit ingredients</button>
-            </div>
-          </div>
-          <div v-if="selectedOptionForRecipes" class="flavor-recipe-editor">
-            <div class="simple-list compact-list">
-              <div v-for="line in selectedOptionForRecipes.recipes" :key="line.ingredient_id" class="simple-row recipe-line-row">
-                <div><strong>{{ line.name }}</strong><small>{{ formatQuantity(line.quantity, line.base_unit) }}</small></div>
-                <button type="button" class="mini-button reject" @click="removeOptionRecipeLine(selectedOptionForRecipes.id, line.ingredient_id)">Remove</button>
-              </div>
-            </div>
-            <div class="two-column inline-form">
-              <select v-model="newOptionRecipeIngredientId">
-                <option v-for="ingredient in shopIngredients" :key="ingredient.id" :value="ingredient.id">{{ ingredient.name }} · {{ ingredient.base_unit }}</option>
-              </select>
-              <input v-model="newOptionRecipeQuantity" inputmode="decimal" placeholder="Quantity in base unit" />
-              <button type="button" class="secondary" :disabled="optionRecipeBusy" @click="addOptionRecipeLine">
-                {{ optionRecipeBusy ? 'Saving…' : 'Add ingredient' }}
-              </button>
-            </div>
-            <button type="button" class="text-link" @click="closeOptionRecipes">Done editing</button>
-          </div>
-        </div>
       </template>
     </AppModal>
 
